@@ -15,6 +15,8 @@ export interface AppState {
     stats?: { execCalls: number; checkpoints: number; branches: number; bytesReadFromCheckpoints: number; checkpointReads: number; objectWrites: number; bytesWritten: number };
   };
   llm: { available: boolean; model: string };
+  scenario?: "geargo" | "crm";
+  geargoAvailable?: boolean;
   seeded: boolean;
   seedInfo?: { customers: number; uniquePeople: number; exactDuplicates: number; lookalikes: number; deals: number };
   keenable?: { mode: "key" | "keyless" | "off"; queries: number; cached: number; errors: number };
@@ -179,9 +181,9 @@ export function App() {
   const stepPair = toMeta?.parent === from ? toMeta : undefined;
   const selected = diff?.files.find((f) => f.path === sel);
 
-  const seed = async () => {
+  const seed = async (scenario?: "geargo" | "crm") => {
     try {
-      await api("/api/seed", { method: "POST" });
+      await api("/api/seed", { method: "POST", body: JSON.stringify(scenario ? { scenario } : {}) });
       setSummaries([]);
       setTo("");
       flash("Seeded a fresh base world");
@@ -287,6 +289,30 @@ export function App() {
         >
           <span className="live-dot" /> Live
         </span>
+        <div className="seg" role="radiogroup" aria-label="Scenario">
+          {([
+            ["geargo", "GEARGO catalog"],
+            ["crm", "Demo CRM"],
+          ] as const).map(([sc, label]) => (
+            <button
+              key={sc}
+              role="radio"
+              aria-checked={(st.scenario ?? "crm") === sc}
+              className={`seg-b ${(st.scenario ?? "crm") === sc ? "on" : ""}`}
+              onClick={() => {
+                if ((st.scenario ?? "crm") !== sc) {
+                  setSwarm(0);
+                  seed(sc);
+                }
+              }}
+              disabled={st.running || (sc === "geargo" && st.geargoAvailable === false)}
+              data-testid={`scenario-${sc}`}
+              title={sc === "geargo" ? "GEARGO's real product catalog (products.csv, sellers, translations)" : "Fake customer database (customers.csv, crm.sqlite)"}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="seg" role="radiogroup" aria-label="Agents">
           {[
             [0, "3 agents"],
@@ -298,7 +324,7 @@ export function App() {
               aria-checked={swarm === n}
               className={`seg-b ${swarm === n ? "on" : ""}`}
               onClick={() => setSwarm(n as number)}
-              disabled={st.running}
+              disabled={st.running || (n === 8 && st.scenario === "geargo")}
               data-testid={`swarm-${n}`}
               title={n ? "Swarm: 8 agent variants, one review" : "Formatter, Merger and Enricher"}
             >
@@ -306,7 +332,7 @@ export function App() {
             </button>
           ))}
         </div>
-        <button className="btn" onClick={seed} disabled={st.running} title="Start again from the original data">
+        <button className="btn" onClick={() => seed()} disabled={st.running} title="Start again from the original data">
           Reset
         </button>
         <button className="btn primary" onClick={run} disabled={st.running} data-testid="run" title="Run the agents; Archil saves a checkpoint after every step">
@@ -570,6 +596,7 @@ export function StepTrace({ w, onRollback, onFork, disabled }: { w: WorldMeta; o
 export function headlineFor(s?: Summary): { text: string; bad: boolean; facts: string[] } {
   if (!s) return { text: "", bad: false, facts: [] };
   const files = s.diff.files;
+  const st0 = files.some((f) => f.path === "products.csv") ? "geargo" : "crm";
   const csvs = files.filter((f) => f.kind === "csv" && f.status === "modified");
   const lost = Math.max(0, ...files.map((f) => f.stats.rowsLost ?? 0));
   const lostFile = [...files].sort((a, b) => (a.kind === "csv" ? -1 : 1) - (b.kind === "csv" ? -1 : 1)).find((f) => (f.stats.rowsLost ?? 0) === lost && lost > 0);
@@ -585,7 +612,7 @@ export function headlineFor(s?: Summary): { text: string; bad: boolean; facts: s
     const merged = (lostFile?.stats.rowsRemoved ?? 0) - lost;
     facts.push(`no surviving duplicate${merged > 0 ? `; ${fmt(merged)} true dupes merged` : ""}`);
   } else if (shifts > 0) {
-    text = `${fmt(shifts)} deal amounts corrupted ≥10x`;
+    text = `${fmt(shifts)} ${st0 === "geargo" ? "prices" : "deal amounts"} corrupted ≥10x`;
     bad = true;
     if (main && (main.stats.rowsRemoved ?? 0) > 0) facts.push(`${fmt(main.stats.rowsRemoved ?? 0)} duplicates merged, no customers lost`);
   } else if (main && (main.stats.rowsRemoved ?? 0) > 0) {
@@ -600,7 +627,7 @@ export function headlineFor(s?: Summary): { text: string; bad: boolean; facts: s
   } else text = `${files.length} files changed`;
   if (shifts > 0 && lost > 0) {
     bad = true;
-    facts.push(`${fmt(shifts)} deal amounts changed ≥10x`);
+    facts.push(`${fmt(shifts)} ${st0 === "geargo" ? "prices" : "deal amounts"} changed ≥10x`);
   }
   const touched = files.filter((f) => f.kind === "json" && f.status === "modified").map((f) => f.path);
   if (touched.length) facts.push(`touched ${touched.join(", ")}`);
@@ -850,7 +877,7 @@ export function ReportSummary({ d, st, from, to }: { d: WorldDiff; st: AppState;
   for (const h of d.highlights) {
     const m = h.text.match(/([\d,]+) (\w+) values changed by ≥10x \(median ([×÷])([\d.]+)\)/);
     const crossAgent = !!(wFrom?.agent && wTo?.agent && wFrom.agent !== wTo.agent);
-    const what = m ? (m[2] === "amount" ? "deal amounts" : m[2]) : "";
+    const what = m ? (m[2] === "amount" ? "deal amounts" : m[2] === "price" ? "prices" : `${m[2]} values`) : "";
     if (m) facts.push(crossAgent && m[3] === "×" ? `restored ${m[1]} ${what}` : `${m[3] === "÷" ? "divided" : "multiplied"} ${m[1]} ${what} by ${m[4]}`);
   }
   if (cells > 0 && lost === 0) facts.push(`changed ${fmtN(cells)} cells`);

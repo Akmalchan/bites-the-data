@@ -6,6 +6,7 @@ import { StepContext, type ToolCall } from "./agents/context.ts";
 import { LLM_MODEL, llmAvailable, runLlmAgent } from "./agents/llm.ts";
 import { AGENTS, FORK_VARIANTS, activeSteps, forkVariantDef, swarmDefs, type AgentDef } from "./agents/scripted.ts";
 import { keenableMode, keenableStats } from "./keenable.ts";
+import { GEARGO_AGENTS, GEARGO_FORK_VARIANTS, geargoAvailable, geargoFiles, geargoVariant, setBaseline, REMOVED } from "./geargo.ts";
 import { diffWorlds, type WorldDiffResult } from "./diff/engine.ts";
 import type { FileDetail, Manifest, WorldDiff } from "./diff/types.ts";
 import { evaluateInvariant } from "./invariant.ts";
@@ -103,6 +104,10 @@ export class DeltaApp {
   private defs: AgentDef[] = AGENTS;
   swarmSize = 0;
   diskMode?: unknown;
+  scenario: "geargo" | "crm" = "geargo";
+  private baseAgents(): AgentDef[] {
+    return this.scenario === "geargo" ? GEARGO_AGENTS : AGENTS;
+  }
 
   async init(): Promise<void> {
     this.events.setMaxListeners(100);
@@ -122,6 +127,13 @@ export class DeltaApp {
       await this.store.init();
     }
     this.load();
+    if (this.scenario === "geargo" && this.worlds.some((w) => w.id === "base")) {
+      try {
+        setBaseline(parseCsv((await this.store.reader("base").read("products.csv")).toString()).rows);
+      } catch {
+        /* base not readable yet */
+      }
+    }
   }
 
   backend(): BackendInfo & { error?: string; execCalls?: number; checkpoints?: number; stats?: StoreStats } {
@@ -138,7 +150,7 @@ export class DeltaApp {
     for (const w of this.worlds) w.frozen = this.store.frozenMeta?.(w.id) ?? w.frozen;
     writeFileSync(
       stateFile(this.store.info().kind),
-      JSON.stringify({ backend: this.store.info().kind, runId: this.runId, seedInfo: this.seedInfo, worlds: this.worlds, agents: this.agents, lastBisect: this.lastBisect }),
+      JSON.stringify({ backend: this.store.info().kind, scenario: this.scenario, runId: this.runId, seedInfo: this.seedInfo, worlds: this.worlds, agents: this.agents, lastBisect: this.lastBisect }),
     );
   }
 
@@ -155,13 +167,15 @@ export class DeltaApp {
       const s = JSON.parse(readFileSync(file, "utf8"));
       if (s.backend !== this.store.info().kind) return;
       this.runId = s.runId;
+      if (s.scenario === "geargo" || s.scenario === "crm") this.scenario = s.scenario;
       this.seedInfo = s.seedInfo;
       this.worlds = s.worlds ?? [];
       this.agents = (s.agents ?? []).map((a: AgentState) => (a.status === "running" ? { ...a, status: "error", error: "interrupted by restart" } : a));
       this.lastBisect = s.lastBisect;
       // Display names come from the current agent definitions, so renames apply to saved runs too.
       const swarmN = this.agents.filter((a) => a.id.startsWith("S")).length;
-      const defs = swarmN ? swarmDefs(swarmN) : AGENTS;
+      const defs = swarmN ? swarmDefs(swarmN) : this.baseAgents();
+      this.defs = defs;
       this.agents = this.agents.map((a) => {
         const d = defs.find((x) => x.id === a.id);
         return d ? { ...a, name: d.name, role: d.role } : a;
@@ -173,6 +187,14 @@ export class DeltaApp {
   }
 
   presets(): Preset[] {
+    if (this.scenario === "geargo") {
+      return [
+        { id: "removed", label: "No product removed", expr: "rows(products.csv) >= 55" },
+        { id: "drift", label: "Prices change within ±20%", expr: "drift(products.csv) <= 0.2" },
+        { id: "fitment", label: "Fitment set unless universal fit", expr: "unfit(products.csv) == 0" },
+        { id: "stock", label: "Stock not zeroed by a catalog agent", expr: "zeroed(products.csv) == 0" },
+      ];
+    }
     const info = this.seedInfo;
     if (!info) return [];
     return [
@@ -193,16 +215,20 @@ export class DeltaApp {
       agents: this.agents,
       running: this.running,
       presets: this.presets(),
+      scenario: this.scenario,
+      geargoAvailable: geargoAvailable(),
       swarmSize: this.swarmSize,
-      forkVariants: FORK_VARIANTS,
+      forkVariants: this.forkVariants(),
       diskMode: this.diskMode,
       keenable: { mode: keenableMode(), ...keenableStats },
       lastBisect: this.lastBisect,
     };
   }
 
-  async seed(): Promise<void> {
+  async seed(scenario?: "geargo" | "crm"): Promise<void> {
     if (this.running) throw new Error("a run is in progress");
+    if (scenario) this.scenario = scenario;
+    if (this.scenario === "geargo" && !geargoAvailable()) this.scenario = "crm";
     this.running = true;
     this.emit("state", this.snapshot());
     try {
@@ -211,14 +237,22 @@ export class DeltaApp {
       this.metricsCache.clear();
       this.lastBisect = undefined;
       await this.store.reset(this.runId);
-      const { files, info } = seedFiles();
-      this.seedInfo = info;
+      let files: Record<string, Buffer | string>;
+      if (this.scenario === "geargo") {
+        files = geargoFiles();
+        this.seedInfo = undefined;
+        setBaseline(parseCsv(files["products.csv"].toString()).rows);
+      } else {
+        const seeded = seedFiles();
+        files = seeded.files;
+        this.seedInfo = seeded.info;
+      }
       await this.store.create("_base", files);
       const snap = await this.store.snapshot("_base", "base");
       this.worlds = [{ id: "base", label: "base", parent: null, kind: "base", createdAt: Date.now(), snapshotMs: snap.ms, ref: snap.ref }];
-      this.defs = AGENTS;
+      this.defs = this.baseAgents();
       this.swarmSize = 0;
-      this.agents = AGENTS.map((a) => ({ id: a.id, name: a.name, role: a.role, status: "idle", mode: "scripted", stepsDone: 0, stepsTotal: a.steps.length }));
+      this.agents = this.defs.map((a) => ({ id: a.id, name: a.name, role: a.role, status: "idle", mode: "scripted", stepsDone: 0, stepsTotal: activeSteps(a).length }));
       this.persist();
     } finally {
       this.running = false;
@@ -237,7 +271,8 @@ export class DeltaApp {
     this.lastBisect = undefined;
     this.worlds = this.worlds.filter((w) => w.kind === "base");
     this.swarmSize = Math.max(0, Math.min(50, Math.floor(swarm)));
-    this.defs = this.swarmSize ? swarmDefs(this.swarmSize) : AGENTS;
+    if (this.swarmSize && this.scenario === "geargo") throw new Error("Swarm runs on the Demo CRM scenario; switch scenario to use 8 agents");
+    this.defs = this.swarmSize ? swarmDefs(this.swarmSize) : this.baseAgents();
     if (this.swarmSize) mode = "scripted";
     this.agents = this.defs.map((a) => ({ id: a.id, name: a.name, role: a.role, status: "running", mode, stepsDone: 0, stepsTotal: mode === "llm" ? 8 : activeSteps(a).length }));
     const prep = (this.store as unknown as { prepareAgents?: (k: string[]) => Promise<unknown> }).prepareAgents;
@@ -370,6 +405,7 @@ export class DeltaApp {
   /** Everything the "What went wrong" panel needs for one broken agent, plus a ready-to-paste fix prompt. */
   async incident(agentId: string) {
     if (this.running) throw new Error("a run is in progress");
+    if (this.scenario === "geargo") return this.incidentGeargo(agentId);
     const a = this.agents.find((x) => x.id === agentId);
     if (!a) throw new Error(`unknown agent ${agentId}`);
     const steps = this.worlds.filter((w) => w.agent === agentId && w.kind === "checkpoint").sort((x, y) => (x.step ?? 0) - (y.step ?? 0));
@@ -403,7 +439,7 @@ export class DeltaApp {
     const firstBadStep = Math.min(...rules.map((r) => r.step ?? Infinity));
     const lastGood = Number.isFinite(firstBadStep) ? (firstBadStep > 1 ? steps.find((w) => w.step === firstBadStep - 1) : undefined) : end;
     const restore = lastGood ? { world: lastGood.id, ref: lastGood.ref, stepName: lastGood.stepName } : { world: "base", ref: this.worlds.find((w) => w.id === "base")?.ref, stepName: "original data" };
-    const def = this.defs.find((x) => x.id === agentId) ?? AGENTS.find((x) => x.id === agentId);
+    const def = this.defs.find((x) => x.id === agentId) ?? this.baseAgents().find((x) => x.id === agentId);
     const goal = def?.goal ?? a.role;
     const parts: string[] = [];
     const lostRule = rules.find((r) => /Customers/.test(r.label));
@@ -441,11 +477,102 @@ export class DeltaApp {
     ]
       .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
       .join("\n");
-    return { agent: a.id, name: a.name, end: end.id, sentence, rules, lost, lostCount: lost.length, merged, deals: shifted, restore, prompt, csv: csvRows };
+    const tabs = [
+      { id: "missing", label: "Missing customers", columns: ["id", "name", "email", "company"], rows: lost.map((r) => [r.id, r.name, r.email, r.company].map((v) => String(v ?? ""))) },
+      { id: "deals", label: "Changed deals", columns: ["deal", "customer", "amount before → after"], rows: shifted.map((d) => [String(d.id), String(d.customer ?? ""), `${Number(d.before).toLocaleString("en-US")} → ${Number(d.after).toLocaleString("en-US")}`]) },
+    ];
+    return { agent: a.id, name: a.name, end: end.id, sentence, rules, lost, lostCount: lost.length, merged, deals: shifted, restore, prompt, csv: csvRows, tabs, fixVariant: "Merger (exact)", csvName: `missing_customers_${a.id}.csv` };
+  }
+
+  private async incidentGeargo(agentId: string) {
+    const a = this.agents.find((x) => x.id === agentId);
+    if (!a) throw new Error(`unknown agent ${agentId}`);
+    const steps = this.worlds.filter((w) => w.agent === agentId && w.kind === "checkpoint").sort((x, y) => (x.step ?? 0) - (y.step ?? 0));
+    const end = steps[steps.length - 1];
+    if (!end) throw new Error("run the agents first");
+    const reader = this.store.reader(end.id);
+    const rules: { id: string; label: string; expr: string; value: string; firstBad?: string; step?: number; stepName?: string; thought?: string; checks: number }[] = [];
+    for (const p of this.presets()) {
+      const r = await evaluateInvariant(p.expr, reader);
+      if (r.ok) continue;
+      const b = await this.bisect(agentId, p.expr, true);
+      const bad = steps.find((w) => w.id === b.firstBad);
+      rules.push({ id: p.id, label: p.label, expr: p.expr, value: r.value, firstBad: b.firstBad, step: bad?.step, stepName: bad?.stepName, thought: bad?.thought, checks: b.bisectChecks });
+    }
+    const uzs = (v: unknown) => `${Number(v).toLocaleString("en-US")} UZS`;
+    const d = await this.diff("base", end.id);
+    const det = d.details.get("products.csv");
+    const removed: string[][] = [];
+    const prices: string[][] = [];
+    const fitment: string[][] = [];
+    const stock: string[][] = [];
+    if (det?.type === "csv") {
+      const t = det.table;
+      for (const r of t.removed) removed.push([String(r.sku), String(r.name), uzs(r.price), String(r["product:brand"] ?? "")]);
+      for (const c of t.changed) {
+        const p = c.cells.price;
+        if (p && Number(p.before) && Number(p.after) / Number(p.before) <= 0.1) prices.push([String(c.row.sku), String(c.row.slug), `${uzs(p.before)} → ${uzs(p.after)}`]);
+        const f = c.cells["product:compatibleVehicleSlugs"];
+        if (f && String(f.before ?? "").trim() && !String(f.after ?? "").trim()) fitment.push([String(c.row.sku), String(c.row.slug), `${f.before} → empty`]);
+        const s2 = c.cells.stockOnHand;
+        if (s2 && Number(s2.before) > 0 && String(s2.after) === "0") stock.push([String(c.row.sku), String(c.row.slug), `${s2.before} → 0`]);
+      }
+    }
+    const stepOf = (id: string) => rules.find((r) => r.id === id)?.step;
+    const parts: string[] = [];
+    if (removed.length) parts.push(`removed ${removed.length} product${removed.length === 1 ? "" : "s"}${stepOf("removed") ? ` at step ${stepOf("removed")}` : ""}`);
+    if (fitment.length) parts.push(`wiped fitment on ${fitment.length}${stepOf("fitment") ? ` at step ${stepOf("fitment")}` : ""}`);
+    if (prices.length) parts.push(`divided ${prices.length} prices by 100${stepOf("drift") ? ` at step ${stepOf("drift")}` : ""}`);
+    if (stock.length) parts.push(`zeroed stock on ${stock.length}${stepOf("stock") ? ` at step ${stepOf("stock")}` : ""}`);
+    const sentence = rules.length
+      ? `${a.name} ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}` : parts[0] ?? `broke ${rules.length} rules`}.`
+      : `${a.name} passed every rule.`;
+    const firstBadStep = Math.min(...rules.map((r) => r.step ?? Infinity));
+    const lastGood = Number.isFinite(firstBadStep) ? (firstBadStep > 1 ? steps.find((w) => w.step === firstBadStep - 1) : undefined) : end;
+    const restore = lastGood ? { world: lastGood.id, ref: lastGood.ref, stepName: lastGood.stepName } : { world: "base", ref: this.worlds.find((w) => w.id === "base")?.ref, stepName: "original catalog" };
+    const def = this.defs.find((x) => x.id === agentId) ?? this.baseAgents().find((x) => x.id === agentId);
+    const backend = this.store.info();
+    const csv = ["sku,name,price_uzs,brand", ...removed.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))].join("\n");
+    const prompt = [
+      `# Fix request: ${a.name} damaged the GEARGO catalog`,
+      ``,
+      `## What the agent was asked to do`,
+      def?.goal ?? a.role,
+      ``,
+      `## What went wrong`,
+      `- ${sentence}`,
+      ...rules.map((r) => `- Rule broken: **${r.label}** (\`${r.expr}\`; now ${r.value}). First bad step: **step ${r.step} — ${r.stepName}** (found by bisect in ${r.checks} checks).${r.thought ? ` The agent's reasoning: "${r.thought}"` : ""}`),
+      ``,
+      removed.length ? `## Removed products (full list attached as removed_products.csv)\n| sku | name | price | brand |\n|---|---|---|---|\n${removed.map((r) => `| ${r.join(" | ")} |`).join("\n")}` : ``,
+      prices.length ? `\n## Prices divided by 100\n${prices.map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}\nUZS has no minor unit: prices are whole sum, never tiyin.` : ``,
+      fitment.length ? `\n## Fitment wiped\n${fitment.map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}` : ``,
+      stock.length ? `\n## Stock zeroed\n${stock.map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}` : ``,
+      ``,
+      `## Restore point`,
+      `- Checkpoint: **${restore.world}** (${restore.stepName})${restore.ref ? `, ${backend.kind === "archil" ? "Archil checkpoint" : "checkpoint"} \`${restore.ref}\`` : " (local checkpoint)"}`,
+      ``,
+      `## Instructions`,
+      `1. Restore products.csv from checkpoint ${restore.world}${restore.ref ? ` (\`${restore.ref}\`)` : ""}.`,
+      `2. Redo the dedupe with exact SKU matching only. Products for the same vehicle with similar names are different products.`,
+      `3. Never divide prices: UZS has no minor unit. Keep compatibleVehicleSlugs unless isUniversalFit is true. Do not zero stock from a partial feed.`,
+      `4. Verify: rows(products.csv) >= 55, every price within ±20% of before, fitment set unless universal fit, no stock zeroed.`,
+    ]
+      .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
+      .join("\n");
+    const tabs = [
+      { id: "missing", label: "Removed products", columns: ["sku", "name", "price", "brand"], rows: removed },
+      { id: "prices", label: "Prices ÷100", columns: ["sku", "product", "price before → after"], rows: prices },
+      { id: "fitment", label: "Fitment", columns: ["sku", "product", "vehicles"], rows: fitment },
+      { id: "stock", label: "Stock", columns: ["sku", "product", "stock"], rows: stock },
+    ];
+    return {
+      agent: a.id, name: a.name, end: end.id, sentence, rules, lost: [], lostCount: removed.length, merged: 0, deals: [], restore, prompt, csv, tabs,
+      fixVariant: "Catalog cleaner (exact)", csvName: `removed_products_${a.id}.csv`,
+    };
   }
 
   forkVariants() {
-    return FORK_VARIANTS;
+    return this.scenario === "geargo" ? GEARGO_FORK_VARIANTS : FORK_VARIANTS;
   }
 
   /**
@@ -457,7 +584,7 @@ export class DeltaApp {
     if (this.running) throw new Error("a run is in progress");
     const src = this.worlds.find((x) => x.id === worldId);
     if (!src || src.kind !== "checkpoint" || !src.agent) throw new Error(`${worldId} is not an agent checkpoint`);
-    const base = forkVariantDef(variant);
+    const base = this.scenario === "geargo" ? geargoVariant(variant) : forkVariantDef(variant);
     if (!base) throw new Error(`unknown variant ${variant}`);
     const srcAgent = this.agents.find((a) => a.id === src.agent)!;
     const done = new Set(this.worlds.filter((w) => w.agent === src.agent && w.kind === "checkpoint" && (w.step ?? 0) <= (src.step ?? 0)).map((w) => w.stepName));

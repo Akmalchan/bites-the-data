@@ -49,7 +49,7 @@ export function detectKey(a: TableInput, b: TableInput): string[] | null {
   const score = (c: string) => {
     const l = c.toLowerCase();
     if (l === "id") return 0;
-    if (l === "uuid" || l === "key" || l === "pk") return 1;
+    if (l === "uuid" || l === "key" || l === "pk" || l === "sku" || l === "slug") return 1;
     if (l.endsWith("_id") || l.endsWith("id")) return 2;
     return 3;
   };

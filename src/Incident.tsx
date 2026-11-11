@@ -16,6 +16,9 @@ interface Incident {
   restore: { world: string; ref?: string; stepName?: string };
   prompt: string;
   csv: string;
+  tabs: { id: string; label: string; columns: string[]; rows: string[][] }[];
+  fixVariant: string;
+  csvName: string;
 }
 
 export function IncidentDrawer({
@@ -29,7 +32,7 @@ export function IncidentDrawer({
 }) {
   const [inc, setInc] = useState<Incident | null>(null);
   const [err, setErr] = useState("");
-  const [tab, setTab] = useState<"missing" | "deals">("missing");
+  const [tab, setTab] = useState<string>("missing");
   const [q, setQ] = useState("");
   const [showPrompt, setShowPrompt] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -43,11 +46,12 @@ export function IncidentDrawer({
     return () => document.removeEventListener("keydown", onKey);
   }, [agent, onClose]);
 
+  const current = inc?.tabs.find((t) => t.id === tab) ?? inc?.tabs[0];
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
-    const list = inc?.lost ?? [];
-    return s ? list.filter((r) => Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(s))) : list;
-  }, [inc, q]);
+    const list = current?.rows ?? [];
+    return s ? list.filter((r) => r.some((v) => v.toLowerCase().includes(s))) : list;
+  }, [current, q]);
 
   const copy = async () => {
     if (!inc) return;
@@ -68,7 +72,7 @@ export function IncidentDrawer({
     const url = URL.createObjectURL(new Blob([inc.csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `missing_customers_${inc.agent}.csv`;
+    a.download = inc.csvName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
@@ -106,15 +110,15 @@ export function IncidentDrawer({
                 Copy fix prompt for your AI agent
               </button>
               <button className="btn" onClick={download} data-testid="download-missing">
-                Download missing rows (CSV)
+                Download {inc.tabs[0]?.label.toLowerCase() ?? "missing rows"} (CSV)
               </button>
               {fixStep && fixStep !== "base" && (
                 <>
                   <button className="btn" onClick={() => onRollback(fixStep)} title="Undo this agent's work after this step">
                     ↺ Roll back to step {fixStep.split("@")[1]}
                   </button>
-                  <button className="btn fix" onClick={() => onFix(fixStep, "Merger (exact)")} data-testid="fix-fork" title="Redo the job safely from the last good step">
-                    ⑂ Fix it: fork from step {fixStep.split("@")[1]} with Merger (exact)
+                  <button className="btn fix" onClick={() => onFix(fixStep, inc.fixVariant)} data-testid="fix-fork" title="Redo the job safely from the last good step">
+                    ⑂ Fix it: fork from step {fixStep.split("@")[1]} with {inc.fixVariant}
                   </button>
                 </>
               )}
@@ -122,46 +126,29 @@ export function IncidentDrawer({
             {showPrompt && <textarea ref={promptRef} className="inc-prompt" readOnly value={inc.prompt} aria-label="Fix prompt" />}
 
             <div className="inc-tabs" role="tablist">
-              <button role="tab" aria-selected={tab === "missing"} className={`ftab ${tab === "missing" ? "on" : ""}`} onClick={() => setTab("missing")}>
-                Missing customers <span className="inc-count">{fmt(inc.lostCount)}</span>
-              </button>
-              <button role="tab" aria-selected={tab === "deals"} className={`ftab ${tab === "deals" ? "on" : ""}`} onClick={() => setTab("deals")}>
-                Changed deals <span className="inc-count">{fmt(inc.deals.length)}</span>
-              </button>
+              {inc.tabs.map((t) => (
+                <button key={t.id} role="tab" aria-selected={current?.id === t.id} className={`ftab ${current?.id === t.id ? "on" : ""}`} onClick={() => setTab(t.id)} data-testid={`inc-tab-${t.id}`}>
+                  {t.label} <span className="inc-count">{fmt(t.rows.length)}</span>
+                </button>
+              ))}
               <span className="spacer" />
-              {tab === "missing" && <input className="inp inc-search" placeholder="Search name, email, company…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search missing customers" />}
+              <input className="inp inc-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search rows" />
             </div>
             <div className="inc-table">
-              {tab === "missing" ? (
-                <table className="grid">
-                  <thead>
-                    <tr><th>id</th><th>name</th><th>email</th><th>company</th></tr>
-                  </thead>
-                  <tbody>
-                    {rows.slice(0, 400).map((r) => (
-                      <tr key={String(r.id)} className="rm lost">
-                        <td>{String(r.id)}</td><td>{String(r.name)}</td><td>{String(r.email)}</td><td>{String(r.company)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <table className="grid">
-                  <thead>
-                    <tr><th>deal</th><th>customer</th><th>amount before → after</th></tr>
-                  </thead>
-                  <tbody>
-                    {inc.deals.slice(0, 400).map((d) => (
-                      <tr key={String(d.id)}>
-                        <td>{String(d.id)}</td>
-                        <td>{String(d.customer ?? "")}</td>
-                        <td className="chg"><span className="before">{fmt(Number(d.before))}</span><span className="after">{fmt(Number(d.after))}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {tab === "missing" && rows.length > 400 && <div className="more">Showing 400 of {fmt(rows.length)}. The CSV has all of them.</div>}
+              <table className="grid">
+                <thead>
+                  <tr>{current?.columns.map((c) => <th key={c}>{c}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, 400).map((r, i) => (
+                    <tr key={i} className={current?.id === "missing" ? "rm lost" : ""}>
+                      {r.map((v, j) => <td key={j} className={v.includes("→") ? "chg" : ""}>{v}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {rows.length > 400 && <div className="more">Showing 400 of {fmt(rows.length)}. The CSV has all of them.</div>}
+              {rows.length === 0 && <div className="more">Nothing here.</div>}
             </div>
             {inc.merged > 0 && <p className="inc-note">{inc.merged} other removed rows were true duplicates (their email still exists), so they are fine.</p>}
           </div>

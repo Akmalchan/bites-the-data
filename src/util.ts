@@ -26,6 +26,7 @@ export function show(v: unknown): string {
 /** Table cell rendering: blanks stay blank, id-like numbers get no thousands separators. */
 export function cell(v: unknown, col: string): string {
   if (v === null || v === undefined || v === "") return "";
+  if (/(^|:)(price|salePrice)$/i.test(col) && v !== "" && !Number.isNaN(Number(v))) return `${Number(v).toLocaleString("en-US")} UZS`;
   if (typeof v === "number" && /(^|_)id$|rowid/i.test(col)) return String(v);
   return show(v);
 }

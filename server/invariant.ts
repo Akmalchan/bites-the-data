@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { parseCsv } from "./diff/csv.ts";
 import { sqliteScalar } from "./diff/sqlite.ts";
 import type { WorldReader } from "./diff/engine.ts";
+import { baseline } from "./geargo.ts";
 
 export interface InvariantResult {
   ok: boolean;
@@ -18,7 +19,7 @@ export interface InvariantResult {
   error?: string;
 }
 
-const CLAUSE = /^\s*(rows|sql|exists|size)\(\s*([^,)]+?)\s*(?:,\s*"((?:[^"\\]|\\.)*)"\s*)?\)\s*(>=|<=|==|!=|>|<)\s*(-?[\d.,_]+)\s*$/i;
+const CLAUSE = /^\s*(rows|sql|exists|size|drift|unfit|zeroed)\(\s*([^,)]+?)\s*(?:,\s*"((?:[^"\\]|\\.)*)"\s*)?\)\s*(>=|<=|==|!=|>|<)\s*(-?[\d.,_]+)\s*$/i;
 
 export function parseInvariant(src: string) {
   const parts = src.split(/\s+and\s+/i);
@@ -58,6 +59,22 @@ export async function evaluateInvariant(src: string, reader: WorldReader): Promi
       v = 0;
     } else if (c.fn === "size") v = entry.size;
     else if (c.fn === "rows") v = parseCsv((await reader.read(c.path)).toString("utf8")).rows.length;
+    else if (c.fn === "drift" || c.fn === "unfit" || c.fn === "zeroed") {
+      // catalog rules, measured against the base catalog (by SKU)
+      const rows = parseCsv((await reader.read(c.path)).toString("utf8")).rows;
+      if (c.fn === "drift") {
+        v = 0;
+        for (const r of rows) {
+          const b = baseline.get(String(r.sku));
+          if (b && Number(b.price)) v = Math.max(v, Math.abs(Number(r.price) / Number(b.price) - 1));
+        }
+        v = Math.round(v * 1000) / 1000;
+      } else if (c.fn === "unfit") {
+        v = rows.filter((r) => String(r["product:compatibleVehicleSlugs"] ?? "").trim() === "" && String(r["product:isUniversalFit"]) !== "true").length;
+      } else {
+        v = rows.filter((r) => String(r.stockOnHand) === "0" && Number(baseline.get(String(r.sku))?.stockOnHand ?? 0) > 0).length;
+      }
+    }
     else {
       const local = reader.localPath?.(c.path);
       let p = local ?? "";

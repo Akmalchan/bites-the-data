@@ -22,7 +22,11 @@ const wrap =
   };
 
 server.get("/api/state", wrap(async () => app.snapshot()));
-server.post("/api/seed", wrap(async () => { await app.seed(); return app.snapshot(); }));
+server.post("/api/seed", wrap(async (req) => {
+  const sc = req.body?.scenario;
+  await app.seed(sc === "geargo" || sc === "crm" ? sc : undefined);
+  return app.snapshot();
+}));
 server.post("/api/run", wrap(async (req) => {
   if (app.running) throw new Error("a run is already in progress");
   const mode = req.body?.mode === "llm" ? "llm" : "scripted";
