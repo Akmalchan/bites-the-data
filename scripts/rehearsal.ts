@@ -29,7 +29,7 @@ const shot = (n: string) => page.screenshot({ path: `${out}/${n}.png` });
 
 await page.goto(`${url}/app`);
 await step("reset world (GEARGO catalog)", async () => {
-  await page.waitForFunction(async () => (await (await fetch("/api/state")).json()).scenario === "geargo", null, { timeout: 120_000, polling: 500 });
+  await page.waitForFunction(async () => (async (j) => j.scenario === "geargo" && !j.running)(await (await fetch("/api/state")).json()), null, { timeout: 120_000, polling: 500 });
   await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await page.waitForSelector('[data-testid="run"][disabled]', { timeout: 10_000 }).catch(() => {});
@@ -107,7 +107,7 @@ await step("network shows the fork lane", async () => {
 let swarmMs = 0;
 await step("swarm x 8 (Demo CRM scenario)", async () => {
   await page.goto(`${url}/app?scenario=crm&swarm=8`);
-  await page.waitForFunction(async () => (await (await fetch("/api/state")).json()).scenario === "crm", null, { timeout: 120_000, polling: 500 });
+  await page.waitForFunction(async () => (async (j) => j.scenario === "crm" && !j.running)(await (await fetch("/api/state")).json()), null, { timeout: 120_000, polling: 500 });
   await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
   const t = Date.now();
   await page.getByTestId("run").click();

@@ -8,13 +8,26 @@ Table demos start at 9:30 pm: judges walk up to the table, and every project is 
 
 Data: GEARGO's real Vendure seed (products.csv, sellers/rax-motors-brake-pads.json, translations/*.json), read from the GEARGO repo at seed time. **55 real GEARGO products + 1,945 generated in the same format** (2,000 products; prices in whole UZS).
 
-1. **Run agents** (header: "GEARGO catalog", "3 agents"). Repricer (FX) raises 800 prices by 2.2–5.3% (clean). Translator (web) adds ru/uz names for 2,000 products and looks up brand sites with Keenable (clean). Catalog cleaner (fuzzy) is the rogue.
-2. **Click the red card** → What went wrong: *"Catalog cleaner (fuzzy) removed 40 products at step 3, wiped fitment on 25 at step 4, divided 60 prices by 100 at step 5, and zeroed stock on 45 at step 6."* Tabs: Removed products 40 · Prices ÷100 60 (e.g. byd-song-plus-led-headlight-assembly 2,800,000 UZS → 29,130 UZS) · Fitment 25 (tesla-model-3-y-aluminum-pedal-set) · Stock 45. These include the real PR #106 cases (tesla-model-y-frunk-organizer and byd-han-ambient-light-kit removed, 4 prices ÷100, 1 fitment, 3 stock).
-3. **Copy fix prompt**: task, the 4 broken rules (No product removed · Prices change within ±20% · Fitment set unless universal fit · Stock not zeroed by a catalog agent) with first bad steps found by bisect, examples, the Archil checkpoint to restore (step 2), and "UZS has no minor unit".
-4. **Fix it: fork from step 2 with Catalog cleaner (exact)** → real Archil branch, safe steps; Compare: "restored 40 products, restored 60 prices"; toast "0 products lost".
-5. Swarm × 8 runs on the **Demo CRM** scenario (switch in the header).
+The header is just **Bites the Data · ● Live · Reset · Run agents**. GEARGO always runs a fixed team of 8 agents, one chore each, every one on its own Archil disk forked from the same base:
 
-Measured on Archil tonight: Run agents 13.7 s, Fix it 6.5 s, roll back via Archil branch 153 ms, a full rehearsal ~86 exec calls.
+| Agent | Chore | Result |
+|---|---|---|
+| G1 Repricer (FX) | +2–5% on 800 prices | clean |
+| G2 Catalog cleaner (fuzzy) | dedupe; merges "near-duplicates" at step 3 | **removes 40 products** (incl. tesla-model-y-frunk-organizer, byd-han-ambient-light-kit) → breaks *No product removed* |
+| G3 Translator (web) | ru/uz names + brand sites via Keenable | clean |
+| G4 Price normalizer (units) | "tiyin to sum" at step 4 | **divides 60 prices by 100** (byd-song-plus-led-headlight-assembly 2,800,000 → 29,130 UZS) → breaks *Prices change within ±20%* |
+| G5 Fitment mapper (vehicles) | "remap multi-vehicle fitment" at step 5 | **wipes fitment on 25** (tesla-model-3-y-aluminum-pedal-set) → breaks *Fitment set unless universal fit* |
+| G6 Stock sync (warehouse) | "zero items missing from feed" at step 6 | **zeroes stock on 45** (the 3 PR #106 items) → breaks *Stock not zeroed by a catalog agent* |
+| G7 SEO writer (descriptions) | rewrites 300 short descriptions + bullets | clean |
+| G8 Promo planner (sales) | sale price 5–15% off on 120 items | clean |
+
+1. **Run agents** → Review: **4 clean · 4 broke rules**. Network shows 8 lanes, each rogue with its own red first-bad ring.
+2. **Click a red card** (e.g. G2) → What went wrong: *"Catalog cleaner (fuzzy) removed 40 products at step 3."* Only that agent's damage tab is shown. G4/G5/G6 work the same way with their own sentence, step and examples.
+3. **Copy fix prompt**: the broken rule, first bad step found by bisect, examples, the Archil checkpoint to restore (the last good step) and one agent-specific instruction (e.g. "UZS has no minor unit").
+4. **Fix it** forks from the last good step with a safe variant: Catalog cleaner (exact SKU) · Price normalizer (UZS-aware) · Fitment mapper (keep existing) · Stock sync (dry-run). Real Archil branch; Compare: "restored 40 products"; toast "0 products lost".
+5. **Swarm** page: the same 8 as tiles with pixel avatars; click one for its one-line result. The old Demo CRM fallback (and its 8-variant swarm) is reachable only by URL: `/app?scenario=crm` (`&swarm=8`).
+
+Measured on Archil (8-agent team, Nov 10): Run agents 17.2 s (8 agents, 45 checkpoints on 8 per-agent disks), Fix it 10.1 s, roll back via Archil branch 449 ms; whole rehearsal 55 exec calls, 2 branches, 0 sandboxes.
 
 ## The main path (the one to show)
 
