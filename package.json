@@ -1,0 +1,47 @@
+{
+  "name": "delta",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Track Changes for an agent's whole disk: diff any two Archil checkpoints or forks.",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "dev": "tsx server/index.ts",
+    "start": "NODE_ENV=production tsx server/index.ts",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "test": "vitest run",
+    "seed": "tsx scripts/seed.ts",
+    "smoke:archil": "tsx scripts/archil-smoke.ts",
+    "shots": "tsx scripts/shots.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "csv-parse": "^7.0.3",
+    "csv-stringify": "^6.9.0",
+    "diff": "^9.0.0",
+    "disk": "^1.12.1",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "@fontsource/archivo-black": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "@types/diff": "^7.0.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "playwright-core": "^1.65.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7",
+    "vitest": "^4.1.12"
+  }
+}

@@ -1,0 +1,803 @@
+{
+  "repo": "Akmalchan/GEARGO",
+  "pr": {
+    "number": 106,
+    "title": "Sync brake pad prices from supplier feed (agent)",
+    "url": "https://github.com/Akmalchan/GEARGO/pull/106",
+    "author": "Akmalchan",
+    "baseRef": "main",
+    "headRef": "agent/bulk-price-sync-demo",
+    "baseSha": "39de22af84d00e3669cf98cba104c3e5d0fd7673",
+    "headSha": "902c4340f9933409553ed29c06da877202e28016",
+    "additions": 54,
+    "deletions": 56
+  },
+  "generatedAt": "2026-11-11T04:41:17.692Z",
+  "files": [
+    {
+      "kind": "csv",
+      "path": "apps/vendure/src/seed/products.csv",
+      "status": "modified",
+      "key": "sku",
+      "rowsBefore": 55,
+      "rowsAfter": 53,
+      "added": 0,
+      "removed": 2,
+      "changed": 44,
+      "cellsChanged": 48,
+      "summary": "−2 rows · 48 cells in 44 rows",
+      "columnChangeCounts": {
+        "price": 44,
+        "stockOnHand": 3,
+        "product:compatibleVehicleSlugs": 1
+      },
+      "changedRows": [
+        {
+          "key": "GG-0001-BYDSEAGUL",
+          "label": "byd-seagull-tpe-floor-mats",
+          "cells": {
+            "price": {
+              "before": "790000",
+              "after": "807000"
+            }
+          }
+        },
+        {
+          "key": "GG-0002-BYDDOLPHI",
+          "label": "byd-dolphin-waterproof-trunk-mat",
+          "cells": {
+            "price": {
+              "before": "520000",
+              "after": "534000"
+            }
+          }
+        },
+        {
+          "key": "GG-0003-BYDSONGP",
+          "label": "byd-song-plus-led-headlight-assembly",
+          "cells": {
+            "price": {
+              "before": "2800000",
+              "after": "29130"
+            }
+          }
+        },
+        {
+          "key": "GG-0005-BYDTANGM",
+          "label": "byd-tang-mud-flaps-set",
+          "cells": {
+            "price": {
+              "before": "390000",
+              "after": "403000"
+            }
+          }
+        },
+        {
+          "key": "GG-0006-BYDCHAZOR",
+          "label": "byd-chazor-door-sill-protector",
+          "cells": {
+            "price": {
+              "before": "260000",
+              "after": "267000"
+            }
+          }
+        },
+        {
+          "key": "GG-0007-XPENGG6W",
+          "label": "xpeng-g6-wireless-carplay-screen",
+          "cells": {
+            "price": {
+              "before": "1650000",
+              "after": "16850"
+            }
+          }
+        },
+        {
+          "key": "GG-0008-XPENGP7C",
+          "label": "xpeng-p7-carbon-fiber-mirror-caps",
+          "cells": {
+            "price": {
+              "before": "980000",
+              "after": "1019000"
+            }
+          }
+        },
+        {
+          "key": "GG-0009-XPENGG9T",
+          "label": "xpeng-g9-trunk-organizer",
+          "cells": {
+            "price": {
+              "before": "430000",
+              "after": "442000"
+            }
+          }
+        },
+        {
+          "key": "GG-0010-XPENGX9L",
+          "label": "xpeng-x9-luxury-floor-mat-set",
+          "cells": {
+            "price": {
+              "before": "1250000",
+              "after": "13060"
+            }
+          }
+        },
+        {
+          "key": "GG-0011-LIAUTOL9",
+          "label": "li-auto-l9-center-console-organizer",
+          "cells": {
+            "price": {
+              "before": "340000",
+              "after": "356000"
+            }
+          }
+        },
+        {
+          "key": "GG-0012-LIAUTOL8",
+          "label": "li-auto-l8-rear-seat-tablet-holder",
+          "cells": {
+            "price": {
+              "before": "450000",
+              "after": "464000"
+            },
+            "stockOnHand": {
+              "before": "26",
+              "after": "0"
+            }
+          }
+        },
+        {
+          "key": "GG-0013-LIAUTOL7",
+          "label": "li-auto-l7-screen-protector-kit",
+          "cells": {
+            "price": {
+              "before": "210000",
+              "after": "221000"
+            }
+          }
+        },
+        {
+          "key": "GG-0014-LEAPMOTOR",
+          "label": "leapmotor-c11-all-weather-floor-mats",
+          "cells": {
+            "price": {
+              "before": "890000",
+              "after": "911000"
+            }
+          }
+        },
+        {
+          "key": "GG-0015-LEAPMOTOR",
+          "label": "leapmotor-c10-door-sill-protector",
+          "cells": {
+            "price": {
+              "before": "250000",
+              "after": "262000"
+            }
+          }
+        },
+        {
+          "key": "GG-0016-LEAPMOTOR",
+          "label": "leapmotor-c16-roof-sunshade",
+          "cells": {
+            "price": {
+              "before": "560000",
+              "after": "585000"
+            }
+          }
+        },
+        {
+          "key": "GG-0017-TESLAMODE",
+          "label": "tesla-model-3-y-aluminum-pedal-set",
+          "cells": {
+            "price": {
+              "before": "410000",
+              "after": "425000"
+            },
+            "product:compatibleVehicleSlugs": {
+              "before": "tesla-model-3|tesla-model-y",
+              "after": ""
+            }
+          }
+        },
+        {
+          "key": "GG-0020-UNIVERSAL",
+          "label": "universal-portable-car-vacuum",
+          "cells": {
+            "price": {
+              "before": "430000",
+              "after": "446000"
+            }
+          }
+        },
+        {
+          "key": "GG-0022-UNIVERSAL",
+          "label": "universal-ev-charging-cable-bag",
+          "cells": {
+            "price": {
+              "before": "240000",
+              "after": "252000"
+            }
+          }
+        },
+        {
+          "key": "GG-0023-KOCHCHEMIE",
+          "label": "kochchemie-gentle-snow-foam",
+          "cells": {
+            "price": {
+              "before": "180000",
+              "after": "188000"
+            }
+          }
+        },
+        {
+          "key": "GG-0024-KOCHCHEMIE",
+          "label": "kochchemie-auto-shampoo",
+          "cells": {
+            "price": {
+              "before": "155000",
+              "after": "160000"
+            }
+          }
+        },
+        {
+          "key": "GG-0025-KOCHCHEMIE",
+          "label": "kochchemie-protector-wax",
+          "cells": {
+            "price": {
+              "before": "260000",
+              "after": "266000"
+            }
+          }
+        },
+        {
+          "key": "GG-0026-KOCHCHEMIE",
+          "label": "kochchemie-eulex-cleaner",
+          "cells": {
+            "price": {
+              "before": "230000",
+              "after": "236000"
+            }
+          }
+        },
+        {
+          "key": "GG-0027-UNIVERSAL",
+          "label": "universal-dashboard-phone-holder",
+          "cells": {
+            "price": {
+              "before": "125000",
+              "after": "130000"
+            }
+          }
+        },
+        {
+          "key": "GG-0028-UNIVERSAL",
+          "label": "universal-9-26-inch-wireless-carplay-display",
+          "cells": {
+            "price": {
+              "before": "1350000",
+              "after": "1392000"
+            }
+          }
+        },
+        {
+          "key": "GG-0029-BYDSEAGUL",
+          "label": "byd-seagull-wiper-blade-set",
+          "cells": {
+            "price": {
+              "before": "210000",
+              "after": "216000"
+            }
+          }
+        },
+        {
+          "key": "GG-0031-XPENGG6C",
+          "label": "xpeng-g6-cargo-liner",
+          "cells": {
+            "price": {
+              "before": "610000",
+              "after": "634000"
+            },
+            "stockOnHand": {
+              "before": "20",
+              "after": "0"
+            }
+          }
+        },
+        {
+          "key": "GG-0032-BYDSONGP",
+          "label": "byd-song-plus-charging-cable-bag",
+          "cells": {
+            "price": {
+              "before": "230000",
+              "after": "240000"
+            }
+          }
+        },
+        {
+          "key": "GG-0033-LIAUTOL9",
+          "label": "li-auto-l9-rear-screen-protector",
+          "cells": {
+            "price": {
+              "before": "240000",
+              "after": "248000"
+            }
+          }
+        },
+        {
+          "key": "GG-0035-UNIVERSAL",
+          "label": "universal-usb-c-fast-car-charger",
+          "cells": {
+            "price": {
+              "before": "145000",
+              "after": "151000"
+            }
+          }
+        },
+        {
+          "key": "GG-0036-UNIVERSAL",
+          "label": "universal-blind-spot-mirror-set",
+          "cells": {
+            "price": {
+              "before": "75000",
+              "after": "79000"
+            }
+          }
+        },
+        {
+          "key": "GG-0037-UNIVERSAL",
+          "label": "universal-interior-detailing-brush-kit",
+          "cells": {
+            "price": {
+              "before": "99000",
+              "after": "102000"
+            }
+          }
+        },
+        {
+          "key": "GG-0038-UNIVERSAL",
+          "label": "universal-tire-pressure-gauge",
+          "cells": {
+            "price": {
+              "before": "85000",
+              "after": "88000"
+            }
+          }
+        },
+        {
+          "key": "GG-0040-XPENGP7M",
+          "label": "xpeng-p7-mud-flaps",
+          "cells": {
+            "price": {
+              "before": "360000",
+              "after": "370000"
+            }
+          }
+        },
+        {
+          "key": "GG-0043-UNIVERSAL",
+          "label": "universal-battery-booster-pack",
+          "cells": {
+            "price": {
+              "before": "980000",
+              "after": "10190"
+            }
+          }
+        },
+        {
+          "key": "GG-0044-UNIVERSAL",
+          "label": "universal-snow-foam-lance",
+          "cells": {
+            "price": {
+              "before": "330000",
+              "after": "346000"
+            }
+          }
+        },
+        {
+          "key": "GG-0045-UNIVERSAL",
+          "label": "universal-car-wash-microfiber-set",
+          "cells": {
+            "price": {
+              "before": "120000",
+              "after": "124000"
+            }
+          }
+        },
+        {
+          "key": "GG-0046-TESLAMODE",
+          "label": "tesla-model-y-door-storage-box",
+          "cells": {
+            "price": {
+              "before": "310000",
+              "after": "322000"
+            }
+          }
+        },
+        {
+          "key": "GG-0047-LIAUTOL8",
+          "label": "li-auto-l8-floor-mat-set",
+          "cells": {
+            "price": {
+              "before": "1190000",
+              "after": "1235000"
+            }
+          }
+        },
+        {
+          "key": "GG-0049-BYDDOLPHI",
+          "label": "byd-dolphin-headlight-film",
+          "cells": {
+            "price": {
+              "before": "170000",
+              "after": "175000"
+            }
+          }
+        },
+        {
+          "key": "GG-0051-UNIVERSAL",
+          "label": "universal-parking-sensor-kit-placeholder",
+          "cells": {
+            "price": {
+              "before": "690000",
+              "after": "706000"
+            }
+          }
+        },
+        {
+          "key": "GG-0052-BYDSONGP",
+          "label": "byd-song-plus-tpe-floor-mat-set",
+          "cells": {
+            "price": {
+              "before": "980000",
+              "after": "1003000"
+            },
+            "stockOnHand": {
+              "before": "24",
+              "after": "0"
+            }
+          }
+        },
+        {
+          "key": "GG-0053-XPENGX9R",
+          "label": "xpeng-x9-rear-cargo-protection-film",
+          "cells": {
+            "price": {
+              "before": "290000",
+              "after": "303000"
+            }
+          }
+        },
+        {
+          "key": "GG-0054-LEAPMOTOR",
+          "label": "leapmotor-c01-screen-protector",
+          "cells": {
+            "price": {
+              "before": "190000",
+              "after": "195000"
+            }
+          }
+        },
+        {
+          "key": "GG-0055-LIAUTOL7",
+          "label": "li-auto-l7-trunk-organizer",
+          "cells": {
+            "price": {
+              "before": "430000",
+              "after": "452000"
+            }
+          }
+        }
+      ],
+      "removedRows": [
+        {
+          "key": "GG-0018-TESLAMODE",
+          "label": "tesla-model-y-frunk-organizer",
+          "row": {
+            "name": "Tesla Model Y Frunk Organizer",
+            "slug": "tesla-model-y-frunk-organizer",
+            "description": "Tesla Model Y Frunk Organizer is part of the GEARGO Uzbekistan demo catalog. It is modeled as a practical EV/car-parts marketplace product with clear fitment data, stock, warranty notes and delivery expectations for Tashkent-first operations.",
+            "assets": "",
+            "facets": "category:Trunk Accessories|brand:Tesla Fit|vehicle:tesla-model-y",
+            "optionGroups": "",
+            "optionValues": "",
+            "sku": "GG-0018-TESLAMODE",
+            "price": "620000",
+            "taxCategory": "UZ zero VAT placeholder",
+            "stockOnHand": "22",
+            "trackInventory": "true",
+            "variantAssets": "",
+            "variantFacets": "",
+            "product:brand": "Tesla Fit",
+            "product:shortDescription": "Marketplace-ready trunk accessories item for selected vehicle profiles.",
+            "product:featureBullets": "Cargo-safe textured surface|Lightweight daily-use design|Easy removal for cleaning",
+            "product:compatibleVehicleSlugs": "tesla-model-y",
+            "product:isUniversalFit": "false",
+            "product:badges": "Verified fitment",
+            "product:warrantyNote": "Demo warranty: 14-day fitment review and supplier-backed replacement path where applicable.",
+            "product:deliveryNote": "Uzbekistan delivery placeholder: Tashkent courier, pickup, or regional dispatch after confirmation.",
+            "product:salePrice": "",
+            "product:visualTone": "teal"
+          }
+        },
+        {
+          "key": "GG-0039-BYDHANAM",
+          "label": "byd-han-ambient-light-kit",
+          "row": {
+            "name": "BYD Han Ambient Light Kit",
+            "slug": "byd-han-ambient-light-kit",
+            "description": "BYD Han Ambient Light Kit is part of the GEARGO Uzbekistan demo catalog. It is modeled as a practical EV/car-parts marketplace product with clear fitment data, stock, warranty notes and delivery expectations for Tashkent-first operations.",
+            "assets": "",
+            "facets": "category:Lighting|brand:BYD Fit|vehicle:byd-han",
+            "optionGroups": "",
+            "optionValues": "",
+            "sku": "GG-0039-BYDHANAM",
+            "price": "760000",
+            "taxCategory": "UZ zero VAT placeholder",
+            "stockOnHand": "12",
+            "trackInventory": "true",
+            "variantAssets": "",
+            "variantFacets": "",
+            "product:brand": "BYD Fit",
+            "product:shortDescription": "Marketplace-ready lighting item for selected vehicle profiles.",
+            "product:featureBullets": "Designed for stable road visibility|Install/service support available|Quality checked before handoff",
+            "product:compatibleVehicleSlugs": "byd-han",
+            "product:isUniversalFit": "false",
+            "product:badges": "Sale|Install help",
+            "product:warrantyNote": "Demo warranty: 14-day fitment review and supplier-backed replacement path where applicable.",
+            "product:deliveryNote": "Uzbekistan delivery placeholder: Tashkent courier, pickup, or regional dispatch after confirmation.",
+            "product:salePrice": "680000",
+            "product:visualTone": "neon"
+          }
+        }
+      ],
+      "addedRows": [],
+      "okPriceChanges": {
+        "count": 40,
+        "minPct": 2.1518987341772045,
+        "maxPct": 5.333333333333323
+      }
+    },
+    {
+      "kind": "json",
+      "path": "apps/vendure/src/seed/sellers/rax-motors-brake-pads.json",
+      "status": "modified",
+      "total": 9,
+      "changes": [
+        {
+          "path": ".generated",
+          "kind": "changed",
+          "before": "2026-09-09",
+          "after": "2026-11-10"
+        },
+        {
+          "path": ".products[sku=GG-0057-FL8140].priceUzs",
+          "kind": "changed",
+          "before": 410000,
+          "after": 425000
+        },
+        {
+          "path": ".products[sku=GG-0058-FL2264].priceUzs",
+          "kind": "changed",
+          "before": 295000,
+          "after": 305000
+        },
+        {
+          "path": ".products[sku=GG-0059-FL5026].priceUzs",
+          "kind": "changed",
+          "before": 325000,
+          "after": 335000
+        },
+        {
+          "path": ".products[sku=GG-0060-FL9037].priceUzs",
+          "kind": "changed",
+          "before": 165000,
+          "after": 170000
+        },
+        {
+          "path": ".products[sku=GG-0061-FL9509].priceUzs",
+          "kind": "changed",
+          "before": 295000,
+          "after": 305000
+        },
+        {
+          "path": ".products[sku=GG-0062-FL9168].priceUzs",
+          "kind": "changed",
+          "before": 295000,
+          "after": 305000
+        },
+        {
+          "path": ".products[sku=GG-0063-FL9309].priceUzs",
+          "kind": "changed",
+          "before": 260000,
+          "after": 270000
+        },
+        {
+          "path": ".products[sku=GG-0064-FL8048].priceUzs",
+          "kind": "changed",
+          "before": 325000,
+          "after": 335000
+        }
+      ],
+      "summary": "9 values changed"
+    },
+    {
+      "kind": "json",
+      "path": "apps/vendure/src/seed/translations/products.json",
+      "status": "modified",
+      "total": 1,
+      "changes": [
+        {
+          "path": "[\"flyree-fl2264-ceramic-brake-pads-byd-e2\"].uz.name",
+          "kind": "changed",
+          "before": "FLYREE FL-2264 keramik tormoz kolodkalari",
+          "after": "FLYREE FL-2264 keramik tormoz kolodkalari — yangi narx"
+        }
+      ],
+      "summary": "1 value changed"
+    }
+  ],
+  "hits": [
+    {
+      "rule": "price",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0003-BYDSONGP",
+      "label": "byd-song-plus-led-headlight-assembly",
+      "column": "price",
+      "before": "2800000",
+      "after": "29130",
+      "note": "÷100 · −99%",
+      "severity": "high"
+    },
+    {
+      "rule": "price",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0007-XPENGG6W",
+      "label": "xpeng-g6-wireless-carplay-screen",
+      "column": "price",
+      "before": "1650000",
+      "after": "16850",
+      "note": "÷100 · −99%",
+      "severity": "high"
+    },
+    {
+      "rule": "price",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0010-XPENGX9L",
+      "label": "xpeng-x9-luxury-floor-mat-set",
+      "column": "price",
+      "before": "1250000",
+      "after": "13060",
+      "note": "÷100 · −99%",
+      "severity": "high"
+    },
+    {
+      "rule": "stock",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0012-LIAUTOL8",
+      "label": "li-auto-l8-rear-seat-tablet-holder",
+      "column": "stockOnHand",
+      "before": "26",
+      "after": "0",
+      "note": "out of stock",
+      "severity": "medium"
+    },
+    {
+      "rule": "fitment",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0017-TESLAMODE",
+      "label": "tesla-model-3-y-aluminum-pedal-set",
+      "column": "product:compatibleVehicleSlugs",
+      "before": "tesla-model-3|tesla-model-y",
+      "after": "",
+      "note": "fitment lost",
+      "severity": "high"
+    },
+    {
+      "rule": "stock",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0031-XPENGG6C",
+      "label": "xpeng-g6-cargo-liner",
+      "column": "stockOnHand",
+      "before": "20",
+      "after": "0",
+      "note": "out of stock",
+      "severity": "medium"
+    },
+    {
+      "rule": "price",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0043-UNIVERSAL",
+      "label": "universal-battery-booster-pack",
+      "column": "price",
+      "before": "980000",
+      "after": "10190",
+      "note": "÷100 · −99%",
+      "severity": "high"
+    },
+    {
+      "rule": "stock",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0052-BYDSONGP",
+      "label": "byd-song-plus-tpe-floor-mat-set",
+      "column": "stockOnHand",
+      "before": "24",
+      "after": "0",
+      "note": "out of stock",
+      "severity": "medium"
+    },
+    {
+      "rule": "removed",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0018-TESLAMODE",
+      "label": "tesla-model-y-frunk-organizer",
+      "column": "row",
+      "before": "Tesla Model Y Frunk Organizer",
+      "after": null,
+      "note": "product removed",
+      "severity": "high"
+    },
+    {
+      "rule": "removed",
+      "file": "apps/vendure/src/seed/products.csv",
+      "key": "GG-0039-BYDHANAM",
+      "label": "byd-han-ambient-light-kit",
+      "column": "row",
+      "before": "BYD Han Ambient Light Kit",
+      "after": null,
+      "note": "product removed",
+      "severity": "high"
+    }
+  ],
+  "git": [
+    {
+      "path": "apps/vendure/src/seed/products.csv",
+      "status": "modified",
+      "additions": 44,
+      "deletions": 46,
+      "data": true
+    },
+    {
+      "path": "apps/vendure/src/seed/sellers/rax-motors-brake-pads.json",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 9,
+      "data": true
+    },
+    {
+      "path": "apps/vendure/src/seed/translations/products.json",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "data": true
+    }
+  ],
+  "archil": {
+    "ok": true,
+    "execCalls": 0,
+    "objectWrites": 0,
+    "checkpointReads": 6,
+    "bytesRead": 706449,
+    "reused": true,
+    "hashVerified": true,
+    "ms": 2888,
+    "disk": "bites-geargo",
+    "diskId": "dsk-0000000000118a16",
+    "region": "aws-us-west-2",
+    "baseRef": "pr106-base",
+    "headRef": "pr106-head",
+    "branch": "pr106",
+    "createExecCalls": 2
+  },
+  "verdict": {
+    "level": "warn",
+    "parts": [
+      "4 suspicious price changes",
+      "2 products removed",
+      "fitment lost on 1 product",
+      "3 SKUs set to 0 stock"
+    ],
+    "text": "4 suspicious price changes · 2 products removed · fitment lost on 1 product · 3 SKUs set to 0 stock"
+  },
+  "reportUrl": "http://localhost:5195/pr/106"
+}

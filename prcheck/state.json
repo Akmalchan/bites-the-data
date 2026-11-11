@@ -1,0 +1,17 @@
+{
+  "diskId": "dsk-0000000000118a16",
+  "diskName": "bites-geargo",
+  "prs": {
+    "106": {
+      "baseSha": "39de22af84d00e3669cf98cba104c3e5d0fd7673",
+      "headSha": "902c4340f9933409553ed29c06da877202e28016",
+      "dir": "prs/pr106/902c434-mwbmc0ov",
+      "baseRef": "pr106-base",
+      "headRef": "pr106-head",
+      "branch": "pr106",
+      "execCalls": 2,
+      "commentId": 6787037139,
+      "commentUrl": "https://github.com/Akmalchan/GEARGO/pull/106#issuecomment-6787037139"
+    }
+  }
+}

@@ -1,0 +1,133 @@
+// v4: Network page upgrade + page intros. Headless walk through the main dashboard (classic layout + icon rail) with the OS in dark mode
+// (the app must still render light). Screenshots -> shots/v3/.
+import { chromium } from "playwright-core";
+import { mkdirSync, existsSync } from "node:fs";
+const args = process.argv.slice(2);
+const url = args.includes("--url") ? args[args.indexOf("--url") + 1] : "http://localhost:5177";
+const out = "shots/v5";
+mkdirSync(out, { recursive: true });
+const chrome = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"].find(existsSync);
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--force-dark-mode"] });
+const page = await browser.newPage({ viewport: { width: 1480, height: 940 }, deviceScaleFactor: 2, colorScheme: "dark" });
+const errors: string[] = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+page.on("response", (r) => r.status() >= 400 && errors.push(`${r.status()} ${r.request().method()} ${r.url()}`));
+const shot = async (n: string) => {
+  await page.mouse.move(700, 900);
+  await page.waitForTimeout(450);
+  await page.screenshot({ path: `${out}/${n}.png` });
+  console.log(`saved ${out}/${n}.png`);
+};
+await page.goto(`${url}/app`);
+await page.getByRole("button", { name: "Reset", exact: true }).click();
+await page.waitForSelector('[data-testid="run"][disabled]', { timeout: 10_000 }).catch(() => {});
+await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 60_000 });
+await page.getByTestId("swarm-0").click();
+await page.getByTestId("run").click();
+await page.waitForTimeout(1500);
+await shot("01-dashboard-running");
+await page.waitForSelector('[data-testid="run"]:has-text("Run agents")', { timeout: 400_000 });
+await page.waitForSelector('[data-testid="card-B"] .headline', { timeout: 120_000 });
+await page.getByTestId("quick-B").click();
+await page.getByTestId("file-customers.csv").click();
+await page.waitForSelector('[data-testid="table-removed"]');
+await shot("02-dashboard-B-312-lost");
+console.log(`delta: ${await page.getByTestId("deltaview").innerText()} | git: ${await page.getByTestId("gitview").innerText()}`);
+console.log(`summary: ${(await page.getByTestId("report-summary").locator(".rep-sentence").innerText()).trim()}`);
+
+// The star path: click the red card -> what went wrong -> copy fix prompt
+await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: url });
+await page.getByTestId("wrong-B").click();
+await page.waitForSelector('[data-testid="incident-sentence"]', { timeout: 60_000 });
+await shot("02b-what-went-wrong");
+console.log(`incident: ${(await page.getByTestId("incident-sentence").innerText()).trim()}`);
+await page.getByTestId("copy-prompt").click();
+await page.waitForTimeout(400);
+const clip = await page.evaluate("navigator.clipboard.readText()").catch(() => "");
+console.log(`clipboard: ${String(clip).split("\n")[0]} (${String(clip).length} chars)`);
+await shot("02c-copied");
+await page.keyboard.press("Escape");
+
+await page.getByTestId("nav-network").click();
+await page.waitForSelector('[data-testid="gdot-B@4"] circle.bad', { timeout: 120_000 });
+await shot("03-network");
+console.log(`sidebar on Network: ${await page.locator("aside.sidebar").count()}`);
+await page.getByTestId("gdot-B@4").hover({ force: true });
+await page.waitForSelector(".n-hover");
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${out}/03b-network-hover.png` });
+console.log("saved hover card");
+await page.getByTestId("gdot-B@4").click({ force: true });
+await page.waitForSelector('[data-testid="net-panel"]');
+await page.mouse.move(700, 900);
+await shot("03c-network-panel");
+console.log(`panel: ${(await page.getByTestId("net-panel").innerText()).split("\n").slice(0, 3).join(" | ")}`);
+await page.getByTestId("net-open-diff").click();
+await page.waitForSelector('[data-testid="file-customers.csv"]');
+console.log(`after dot click: sidebar ${await page.locator("aside.sidebar").count()}, compare ${await page.getByTestId("from").inputValue()} -> ${await page.getByTestId("to").inputValue()}`);
+await shot("04-dashboard-step4");
+
+await page.getByTestId("nav-bisect").click();
+await page.getByTestId("bisect-run").click();
+await page.waitForSelector('[data-testid="bisect-verdict"]', { timeout: 60_000 });
+await shot("05-bisect");
+console.log(`bisect: ${(await page.getByTestId("bisect-verdict").locator("h4").innerText()).trim()}`);
+await page.getByTestId("bisect-show").click();
+await page.waitForSelector('[data-testid="file-customers.csv"]');
+console.log(`bisect show: sidebar ${await page.locator("aside.sidebar").count()}, compare ${await page.getByTestId("from").inputValue()} -> ${await page.getByTestId("to").inputValue()}`);
+
+// Fork-and-fix: fork B@3 and continue with Merger (exact)
+if (!(await page.getByTestId("node-B@3").count())) await page.getByTestId("group-B").click();
+await page.getByTestId("node-B@3").hover();
+await page.getByTestId("fork-B@3").click();
+await page.waitForSelector('[data-testid="fork-pop"]');
+await shot("05b-fork-popover");
+await page.getByTestId("fork-opt-Merger (exact)").click();
+await page.waitForSelector('[data-testid="group-F1"]', { timeout: 120_000 });
+await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
+await page.waitForFunction(() => document.querySelector('[data-testid="report-summary"]')?.textContent?.includes("restored"), null, { timeout: 60_000 });
+await shot("05c-fork-fixed-compare");
+console.log(`fork compare: ${await page.getByTestId("from").inputValue()} -> ${await page.getByTestId("to").inputValue()} | ${(await page.getByTestId("report-summary").locator(".rep-sentence").innerText()).trim()}`);
+await page.getByTestId("nav-network").click();
+await page.waitForSelector('[data-testid="graph"]');
+await page.waitForTimeout(1500);
+await shot("05d-network-with-fork");
+await page.getByTestId("nav-dashboard").click();
+
+await page.getByTestId("nav-history").click();
+await page.getByTestId("history-input").fill("Carla Roberts");
+await page.getByTestId("history-run").click();
+await page.waitForSelector('[data-testid="history-result"] .answer', { timeout: 60_000 });
+await shot("06-history");
+console.log(`history: ${(await page.getByTestId("history-result").locator(".answer").innerText()).trim()}`);
+
+await page.getByTestId("nav-dashboard").click();
+if (!(await page.getByTestId("node-B@3").count())) await page.getByTestId("group-B").click();
+await page.getByTestId("node-B@3").hover();
+await page.getByTestId("rollback-B@3").click();
+await page.waitForSelector('[data-testid="rolled-B"]', { timeout: 60_000 });
+await shot("07-dashboard-rolled-back");
+console.log(`rollback: ${(await page.getByTestId("rolled-B").innerText()).replace(/\s+/g, " ")}`);
+
+await page.getByTestId("swarm-8").click();
+await page.getByTestId("run").click();
+await page.waitForTimeout(1200);
+await page.waitForSelector('[data-testid="run"]:has-text("Run agents")', { timeout: 400_000 });
+await page.getByTestId("nav-swarm").click();
+await page.waitForSelector('[data-testid="tile-S3"].bad', { timeout: 120_000 });
+await shot("08-swarm");
+console.log(`swarm: ${await page.locator(".tile.ok").count()} clean, ${await page.locator(".tile.bad").count()} rogue`);
+await page.getByTestId("tile-S3").click();
+await page.waitForSelector('[data-testid="file-customers.csv"]');
+console.log(`swarm tile: sidebar ${await page.locator("aside.sidebar").count()}, compare ${await page.getByTestId("from").inputValue()} -> ${await page.getByTestId("to").inputValue()}`);
+await page.getByTestId("nav-swarm").click();
+await page.goto(`${url}/app?deeplink=1#network`);
+await page.waitForSelector('[data-testid="graph"]');
+console.log(`deep link #network: sidebar ${await page.locator("aside.sidebar").count()}`);
+await shot("09-network-swarm");
+await page.getByTestId("nav-dashboard").click();
+await page.waitForTimeout(800);
+await shot("10-dashboard-swarm");
+console.log(errors.length ? `PAGE ERRORS:\n${errors.join("\n")}` : "no page errors");
+await browser.close();
