@@ -12,7 +12,7 @@ import { HistorySearch } from "./History.tsx";
 import { LogoMark } from "./icons.tsx";
 import { api } from "./util.ts";
 import { NetworkView } from "./Network.tsx";
-import { PAGE_LINES, PageArt } from "./PageArt.tsx";
+import { AgentAvatar, PAGE_LINES, PageArt } from "./PageArt.tsx";
 
 export interface DashCtx {
   st: AppState;
@@ -569,8 +569,38 @@ function HistoryPage({ ctx, onCompare }: { ctx: DashCtx; onCompare: (f: string, 
   );
 }
 
-function SwarmPage({ ctx, rogues, onCompare, go }: { ctx: DashCtx; rogues: Record<string, Rogue>; onCompare: (f: string, t: string) => void; go: (p: Page) => void }) {
+function SwarmPage({
+  ctx, rogues, onCompare, go, onDetails,
+}: { ctx: DashCtx; rogues: Record<string, Rogue>; onCompare: (f: string, t: string) => void; go: (p: Page) => void; onDetails?: (agent: string, broken: boolean) => void }) {
   const { st } = ctx;
+  const [card, setCard] = useState<string | null>(null);
+  useEffect(() => {
+    if (!card) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setCard(null);
+    const onDoc = (e: MouseEvent) => !(e.target as HTMLElement).closest?.(".tile-wrap") && setCard(null);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDoc);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDoc);
+    };
+  }, [card]);
+  const sentenceFor = (agentId: string): string => {
+    const r = rogues[agentId];
+    const sum = ctx.summaries.find((x) => x.agent === agentId);
+    if (!sum) return "";
+    const files = sum.diff.files;
+    const lost = Math.max(0, ...files.filter((f) => f.kind === "csv").map((f) => f.stats.rowsLost ?? 0));
+    const shifts = Math.max(0, ...files.map((f) => f.stats.magnitudeShifts ?? 0));
+    const csv = files.filter((f) => f.kind === "csv" && f.status === "modified").sort((a, b) => (b.stats.cellsChanged ?? 0) - (a.stats.cellsChanged ?? 0))[0];
+    const merged = Math.max(0, (csv?.stats.rowsRemoved ?? 0) - lost);
+    const at = r?.firstBad !== undefined ? ` at step ${r.firstBad}` : "";
+    if (lost > 0) return `Deleted ${lost.toLocaleString("en-US")} customers${at}${shifts ? ` and divided ${shifts.toLocaleString("en-US")} deal amounts by 100` : ""}.`;
+    if (shifts > 0) return `Divided ${shifts.toLocaleString("en-US")} deal amounts by 100${at}.`;
+    if (merged > 0) return `Merged ${merged.toLocaleString("en-US")} duplicates, nothing lost.`;
+    if ((csv?.stats.columnsAdded ?? 0) > 0) return `Added ${csv!.stats.columnsAdded} columns and filled ${(csv!.stats.cellsFilled ?? 0).toLocaleString("en-US")} cells, nothing lost.`;
+    return `Changed ${(csv?.stats.cellsChanged ?? 0).toLocaleString("en-US")} cells, nothing lost.`;
+  };
   const counts = useMemo(() => {
     const v = Object.values(rogues);
     return { clean: v.filter((r) => r.ok).length, bad: v.filter((r) => !r.ok).length };
@@ -592,11 +622,41 @@ function SwarmPage({ ctx, rogues, onCompare, go }: { ctx: DashCtx; rogues: Recor
         {st.agents.map((a) => {
           const r = rogues[a.id];
           return (
-            <button key={a.id} className={`tile ${a.status === "running" ? "run" : r ? (r.ok ? "ok" : "bad") : ""}`} onClick={() => ctx.heads[a.id] && onCompare("base", ctx.heads[a.id])} data-testid={`tile-${a.id}`}>
-              <span className="tile-id">{a.id}</span>
-              <span className="tile-name">{a.name}</span>
-              <span className="tile-st">{a.status === "running" ? `step ${a.stepsDone + 1}/${a.stepsTotal}` : r ? (r.ok ? "clean" : r.firstBad !== undefined ? `broke at step ${r.firstBad}` : r.failed[0]) : "…"}</span>
-            </button>
+            <div key={a.id} className="tile-wrap">
+              <button
+                className={`tile ${a.status === "running" ? "run" : r ? (r.ok ? "ok" : "bad") : ""} ${card === a.id ? "open" : ""}`}
+                onClick={() => setCard(card === a.id ? null : a.id)}
+                aria-expanded={card === a.id}
+                data-testid={`tile-${a.id}`}
+              >
+                <span className="tile-id">{a.id}</span>
+                <span className="tile-name">{a.name}</span>
+                <span className="tile-st">{a.status === "running" ? `step ${a.stepsDone + 1}/${a.stepsTotal}` : r ? (r.ok ? "clean" : r.firstBad !== undefined ? `broke at step ${r.firstBad}` : r.failed[0]) : "…"}</span>
+              </button>
+              {card === a.id && (
+                <div className="agent-card" role="dialog" aria-label={a.name} data-testid={`agentcard-${a.id}`}>
+                  <AgentAvatar name={a.name} status={r ? (r.ok ? "ok" : "bad") : undefined} size={56} />
+                  <div className="agent-card-b">
+                    <div className="agent-card-t">
+                      <b>{a.name}</b>
+                      {r && (r.ok ? <span className="chip ok">✓ clean</span> : <span className="chip bad">✗ broke{r.firstBad !== undefined ? ` @${r.firstBad}` : ""}</span>)}
+                    </div>
+                    <p>{sentenceFor(a.id)}</p>
+                    <button
+                      className="btn sm primary"
+                      onClick={() => {
+                        setCard(null);
+                        if (onDetails) onDetails(a.id, !!r && !r.ok);
+                        else if (ctx.heads[a.id]) onCompare("base", ctx.heads[a.id]);
+                      }}
+                      data-testid={`details-${a.id}`}
+                    >
+                      Details →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -663,7 +723,9 @@ export function Rail({ page, onPage }: { page: ClassicPage; onPage: (p: ClassicP
 }
 
 /** The non-dashboard pages, rendered inside the classic layout's main column. */
-export function PageHost({ ctx, page, onCompare, onPage }: { ctx: DashCtx; page: ClassicPage; onCompare: (f: string, t: string) => void; onPage: (p: ClassicPage) => void }) {
+export function PageHost({
+  ctx, page, onCompare, onPage, onDetails,
+}: { ctx: DashCtx; page: ClassicPage; onCompare: (f: string, t: string) => void; onPage: (p: ClassicPage) => void; onDetails?: (agent: string, broken: boolean) => void }) {
   const rogues = useRogues(ctx.st);
   const go = (p: Page) => onPage(p === "bisect" ? "bisect" : p === "history" ? "history" : p === "swarm" ? "swarm" : "dashboard");
   if (page === "network") {
@@ -678,7 +740,7 @@ export function PageHost({ ctx, page, onCompare, onPage }: { ctx: DashCtx; page:
   }
   if (page === "bisect") return (<div className="ov"><PageIntro page="bisect" /><BisectPage ctx={ctx} onCompare={onCompare} /></div>);
   if (page === "history") return (<div className="ov"><PageIntro page="history" /><HistoryPage ctx={ctx} onCompare={onCompare} /></div>);
-  if (page === "swarm") return (<div className="ov"><PageIntro page="swarm" /><SwarmPage ctx={ctx} rogues={rogues} onCompare={onCompare} go={go} /></div>);
+  if (page === "swarm") return (<div className="ov"><PageIntro page="swarm" /><SwarmPage ctx={ctx} rogues={rogues} onCompare={onCompare} go={go} onDetails={onDetails} /></div>);
   return null;
 }
 
@@ -736,9 +798,10 @@ export function PageIntro({ page }: { page: ClassicPage }) {
   const it = INTROS[page];
   const [open, setOpen] = useState(() => {
     try {
-      return localStorage.getItem(`intro-${page}`) !== "closed";
+      const v = localStorage.getItem(`intro-${page}`);
+      return page === "dashboard" ? v === "open" : v !== "closed";
     } catch {
-      return true;
+      return page !== "dashboard";
     }
   });
   const toggle = () => {
@@ -753,7 +816,7 @@ export function PageIntro({ page }: { page: ClassicPage }) {
   return (
     <header className="intro" data-testid={`intro-${page}`}>
       <div className="intro-top">
-        <PageArt page={page} size={64} />
+        {page !== "dashboard" && <PageArt page={page} size={64} />}
         <h1>{it.title}</h1>
         <p className="intro-q">{it.q}</p>
         <button className="intro-toggle" onClick={toggle} aria-expanded={open}>

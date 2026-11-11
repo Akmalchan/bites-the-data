@@ -87,3 +87,34 @@ export const PAGE_LINES: Record<ClassicPage, string> = {
   history: "Search when a customer or value changed or vanished.",
   swarm: "Run many agents; spot the rogue ones at a glance.",
 };
+
+/** Original pixel avatars per agent type, with a small status corner (green = clean, red = broke). */
+export function AgentAvatar({ name, status, size = 56 }: { name: string; status?: "ok" | "bad"; size?: number }) {
+  const o: Px[] = [];
+  if (/^Merger/.test(name)) {
+    rect(o, 1, 4, 5, 7, BLUE);
+    rect(o, 10, 4, 5, 7, BLUE);
+    rect(o, 6, 7, 4, 1, INK);
+    o.push([7, 6, INK], [8, 8, INK], [6, 6, INK], [9, 8, INK]);
+    rect(o, 3, 6, 1, 3, INK);
+    rect(o, 12, 6, 1, 3, INK);
+  } else if (/^Formatter/.test(name)) {
+    rect(o, 4, 1, 8, 1, INK); rect(o, 4, 14, 8, 1, INK); rect(o, 4, 1, 1, 14, INK); rect(o, 11, 1, 1, 14, INK);
+    for (const y of [4, 6, 8, 10]) rect(o, 6, y, 4, 1, BLUE);
+    o.push([7, 12, INK], [8, 12, INK]);
+  } else {
+    ring(o, 7, 7, 5, INK);
+    rect(o, 7, 3, 1, 9, BLUE);
+    rect(o, 3, 7, 9, 1, BLUE);
+    o.push([5, 4, BLUE], [9, 4, BLUE], [5, 10, BLUE], [9, 10, BLUE]);
+    o.push([11, 11, INK], [12, 12, INK], [13, 13, INK], [12, 13, INK]);
+  }
+  if (status) rect(o, 13, 0, 3, 3, status === "ok" ? "#12965A" : RED);
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" shapeRendering="crispEdges" aria-hidden className="page-art">
+      {o.map(([x, y, c], i) => (
+        <rect key={i} x={x} y={y} width={1} height={1} fill={c} />
+      ))}
+    </svg>
+  );
+}

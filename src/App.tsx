@@ -321,7 +321,17 @@ export function App() {
 
         <main className={`main ${rewind ? "rewind" : ""}`}>
           {page !== "dashboard" ? (
-            <PageHost ctx={ctx} page={page} onPage={setPage} onCompare={(f, t) => { compare(f, t); setPage("dashboard"); }} />
+            <PageHost
+              ctx={ctx}
+              page={page}
+              onPage={setPage}
+              onCompare={(f, t) => { compare(f, t); setPage("dashboard"); }}
+              onDetails={(agent, broken) => {
+                if (heads[agent]) compare("base", heads[agent]);
+                setPage("dashboard");
+                if (broken) setIncident(agent);
+              }}
+            />
           ) : (
           <>
           <PageIntro page="dashboard" />

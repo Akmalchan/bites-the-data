@@ -683,3 +683,15 @@ select.sel.sm { height: 28px; font-size: 12.5px; }
 .page-art { flex: none; display: block; }
 .intro-top .page-art { margin-right: 4px; align-self: center; }
 .intro-top { align-items: center; }
+
+/* swarm agent card */
+.tile-wrap { position: relative; }
+.tile-wrap .tile { width: 100%; height: 100%; }
+.tile.open { box-shadow: 0 0 0 2px var(--accent); }
+.agent-card { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; width: 320px; display: flex; gap: 12px; align-items: flex-start; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 14px 34px rgba(13,15,20,.16); padding: 14px; animation: fade .12s; }
+.tile-wrap:nth-child(n+5) .agent-card { right: 0; left: auto; }
+.agent-card-b { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.agent-card-t { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agent-card-t b { font-size: 14.5px; }
+.agent-card p { margin: 0; font-size: 13.5px; color: var(--text); line-height: 1.4; }
+.agent-card .btn { align-self: flex-start; margin-top: 4px; }
