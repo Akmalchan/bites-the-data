@@ -73,8 +73,9 @@ export function useRogues(st: AppState): Record<string, Rogue> {
         if (r.busy) return;
         const m: Record<string, Rogue> = {};
         for (const row of r.rows) m[row.agent] = { ok: row.ok, failed: row.failed.map((f) => f.label) };
+        if (!cancel) setMap({ ...m }); // show broken/clean right away; first-bad steps follow
         if (r.rows.some((x) => !x.ok)) {
-          const b = await api<{ agent: string; firstBad?: string; stepName?: string }[]>("/api/bisect-rogues", { method: "POST" });
+          const b = await api<{ agent: string; firstBad?: string; stepName?: string }[]>("/api/bisect-rogues", { method: "POST" }).catch(() => []);
           for (const x of b) {
             const step = x.firstBad ? Number(x.firstBad.split("@")[1]) : undefined;
             const cur = m[x.agent];
