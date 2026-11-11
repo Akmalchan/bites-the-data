@@ -136,22 +136,24 @@ function CountUp({ to, decimals = 0, prefix = "", suffix = "" }: { to: number; d
   );
 }
 
-const NUMBERS: { big: ReactNode; label: string; ctx: string; hot?: boolean }[] = [
-  { big: <><CountUp to={312} /><small> of 5,000</small></>, label: "customers an agent silently deleted", ctx: "caught by name, not as “+4,504 −4,903 lines”", hot: true },
-  { big: <><CountUp to={3} /><small> checks</small></>, label: "to find which of 8 steps broke it", ctx: "bisect over Archil checkpoints" },
-  { big: <CountUp to={0.12} decimals={2} suffix=" s" />, label: "to roll the agent back", ctx: "one Archil branch" },
-  { big: <CountUp to={0.0014} decimals={4} prefix="$" />, label: "per 3-agent run", ctx: "no sandboxes, one exec per step" },
+const NUMBERS: { big: ReactNode; label: string; ctx: string }[] = [
+  { big: "Every step", label: "saved as an Archil checkpoint", ctx: "~0.2 s each, any disk size" },
+  { big: <><span className="num-math">⌈log₂ n⌉</span><small> checks</small></>, label: "to find the step that broke a rule", ctx: "8 steps → 3 checks" },
+  { big: "< 0.5 s", label: "to roll an agent back", ctx: "one Archil branch" },
+  { big: <>0<small> sandboxes</small></>, label: "one serverless exec per agent step", ctx: "about $0.05 per 1,000 steps" },
 ];
 
 /* ------------------------------------------------------------------ bisect animation */
 
+// G4 Price normalizer, rule "prices within ±20%": the real probe sequence.
 const PROBES = [
-  { s: 8, ok: false },
+  { s: 5, ok: false },
   { s: 0, ok: true },
-  { s: 4, ok: false },
   { s: 2, ok: true },
   { s: 3, ok: true },
+  { s: 4, ok: false },
 ];
+const BIS_N = 5;
 
 function BisectAnim() {
   const k = PROBES.length; // static: the full probe sequence
@@ -159,9 +161,9 @@ function BisectAnim() {
   const seen = PROBES.slice(0, k);
   return (
     <div className="bis">
-      <div className="bis-lbl mono">steps of agent B (✓ rule held · ✗ rule broke · blank = not checked)</div>
-      <div className="bis-row">
-        {Array.from({ length: 9 }, (_, s) => {
+      <div className="bis-lbl mono">steps of G4 (✓ rule held · ✗ rule broke · blank = not checked)</div>
+      <div className="bis-row" style={{ gridTemplateColumns: `repeat(${BIS_N + 1}, 1fr)` }}>
+        {Array.from({ length: BIS_N + 1 }, (_, s) => {
           const p = seen.find((x) => x.s === s);
           return (
             <div key={s} className={`bis-cell ${p ? (p.ok ? "ok" : "bad") : ""} ${done && s === 4 ? "first" : ""}`}>
@@ -172,7 +174,7 @@ function BisectAnim() {
         })}
       </div>
       <div className="bis-log mono">
-        checked: 8 ✗, base ✓, then {seen.slice(2).map((p) => `${p.s} ${p.ok ? "✓" : "✗"}`).join(", ")}
+        checked: 5 ✗, base ✓, then {seen.slice(2).map((p) => `${p.s} ${p.ok ? "✓" : "✗"}`).join(", ")}
         {done && <b> ⇒ step 4 broke it</b>}
       </div>
     </div>
@@ -228,7 +230,7 @@ export function Landing() {
 
       <section className="nums" aria-label="Numbers from tonight's runs">
         {NUMBERS.map((n) => (
-          <div key={n.label} className={n.hot ? "hot" : ""}>
+          <div key={n.label}>
             <span className="num-row">{n.big}</span>
             <span className="lbl">{n.label}</span>
             <span className="ctx">{n.ctx}</span>
@@ -239,35 +241,36 @@ export function Landing() {
       <section className="sec">
         <div className="kick mono">The problem</div>
         <h2>Git can't read your data. We can.</h2>
+        <div className="ex-lbl mono">Example: GEARGO, a live e-commerce catalog · PR #106</div>
         <div className="terms">
           <div className="term-col">
-          <div className="term-lbl">What git tells you</div>
-          <div className="term term-git">
-            <div className="term-h mono">$ git diff --stat</div>
-            <pre className="git-out">
-              customers.csv | +4,504 −4,903{"\n"}Binary files a/crm.sqlite and b/crm.sqlite differ
-            </pre>
-          </div>
-          <p className="term-cap">Line counts and “binary files differ”. Nothing about which customers.</p>
+            <div className="term-lbl">What git tells you</div>
+            <div className="term term-git">
+              <div className="term-h mono">$ git diff --stat main...pr106</div>
+              <pre className="git-out">
+                products.csv                | +44 −46{"\n"}rax-motors-brake-pads.json  |  +9 −9{"\n"}translations/products.json   |  +1 −1
+              </pre>
+            </div>
+            <p className="term-cap">Line counts. Nothing about which products, prices or vehicles.</p>
           </div>
           <div className="term-col">
-          <div className="term-lbl us">What Bites the Data tells you</div>
-          <div className="term term-us">
-            <div className="term-h mono">$ bites diff base B@8</div>
-            <table className="mini-t">
-              <thead>
-                <tr><th /><th>id</th><th>name</th><th>email</th></tr>
-              </thead>
-              <tbody>
-                <tr className="rm"><td><b className="tag lost">lost</b></td><td>63</td><td>Carla Roberts</td><td>carla.roberts@…</td></tr>
-                <tr className="rm"><td><b className="tag lost">lost</b></td><td>591</td><td>Simona Evans</td><td>simona.evans@…</td></tr>
-                <tr><td><b className="tag merged">merged</b></td><td>245</td><td>Yuki Hill</td><td>yuki.hill@…</td></tr>
-                <tr className="ch"><td><b className="tag warn">÷100</b></td><td>deal 8</td><td colSpan={2}><s>83,750</s> → <b>837.5</b></td></tr>
-              </tbody>
-            </table>
-            <div className="term-sum">312 customers deleted · 267 deals ÷100</div>
-          </div>
-          <p className="term-cap">Which rows were lost, which were merged, which values changed.</p>
+            <div className="term-lbl us">What Bites the Data tells you</div>
+            <div className="term term-us">
+              <div className="term-h mono">$ bites pr-check GEARGO#106</div>
+              <table className="mini-t">
+                <thead>
+                  <tr><th /><th>product</th><th>change</th></tr>
+                </thead>
+                <tbody>
+                  <tr className="rm"><td><b className="tag lost">removed</b></td><td>tesla-model-y-frunk-organizer</td><td>row deleted</td></tr>
+                  <tr className="ch"><td><b className="tag warn">÷100</b></td><td>byd-song-plus-led-headlight-assembly</td><td><s>2,800,000</s> → <b>29,130</b></td></tr>
+                  <tr className="rm"><td><b className="tag lost">fitment</b></td><td>tesla-model-3-y-aluminum-pedal-set</td><td>vehicles → <b>empty</b></td></tr>
+                  <tr className="ch"><td><b className="tag warn">stock</b></td><td>li-auto-l8-rear-seat-tablet-holder</td><td><s>26</s> → <b>0</b></td></tr>
+                </tbody>
+              </table>
+              <div className="term-sum">2 products removed · 4 prices ÷100 · fitment lost on 1 · 3 stock → 0</div>
+            </div>
+            <p className="term-cap">Which products were removed, which prices crashed, which vehicles lost fitment.</p>
           </div>
         </div>
       </section>
@@ -305,9 +308,9 @@ export function Landing() {
             <h3>Compare any two</h3>
             <p>A typed diff: rows and cells for CSV, tables for SQLite, paths for JSON.</p>
             <div className="st3-vis mono" aria-hidden>
-              <div className="cmp-line"><b className="tag lost">lost</b> id 63 Carla Roberts</div>
-              <div className="cmp-line"><b className="tag warn">÷100</b> deal 14 <s>187,500</s> → 1,875</div>
-              <div className="cmp-line"><b className="tag merged">path</b> dedupe.strategy exact → fuzzy</div>
+              <div className="cmp-line"><b className="tag lost">removed</b> tesla-model-y-frunk-organizer</div>
+              <div className="cmp-line"><b className="tag warn">÷100</b> price <s>2,800,000</s> → 29,130</div>
+              <div className="cmp-line"><b className="tag merged">json</b> sellers[sku=GG-0057].priceUzs 410,000 → 425,000</div>
             </div>
           </div>
           <div className="st3">
@@ -316,11 +319,11 @@ export function Landing() {
             <p>Bisect finds the step that broke a rule. Roll back with one Archil branch.</p>
             <div className="st3-vis" aria-hidden>
               <div className="mini-bis">
-                {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((k) => (
-                  <span key={k} className={k <= 3 ? "ok" : "bad"}>{k === 0 ? "b" : k}</span>
+                {[0, 1, 2, 3, 4, 5].map((k) => (
+                  <span key={k} className={k <= 3 ? "ok" : "bad"}>{k === 0 ? "base" : k}</span>
                 ))}
               </div>
-              <div className="mono st3-small">first bad: step 4 · ↺ branch from step 3</div>
+              <div className="mono st3-small">G4: first bad step 4 · ↺ fork from step 3</div>
             </div>
           </div>
         </div>
@@ -331,31 +334,33 @@ export function Landing() {
             <div className="eq"><V>M</V>(<V>t</V>) = {"{"} <V>p</V> ↦ sha256(<V>file</V><sub>p</sub>) {"}"}</div>
             <div className="eq">Δ(<V>t</V>₁, <V>t</V>₂) = {"{"} <V>p</V> : <V>M</V>(<V>t</V>₁)[<V>p</V>] ≠ <V>M</V>(<V>t</V>₂)[<V>p</V>] {"}"}</div>
           </Block>
-          <Block title="Keyed row diff" lead="Match rows by id, then sort removed rows into merged (email survives) and lost (gone for good)." note="A removed row is merged if its email survives, otherwise lost.">
+          <Block title="Keyed row diff" lead="Match products by SKU: a missing SKU is a removed product, a changed cell is a before → after." note="Key auto-detected (id-like column), or set per file: sku for products.csv. Re-sorting counts as zero changes.">
             <div className="eq">removed = <V>K</V>₁ ∖ <V>K</V>₂ &nbsp;·&nbsp; added = <V>K</V>₂ ∖ <V>K</V>₁</div>
             <div className="eq">changed = {"{"} <V>k</V> ∈ <V>K</V>₁ ∩ <V>K</V>₂ : <V>r</V>₁(<V>k</V>) ≠ <V>r</V>₂(<V>k</V>) {"}"}</div>
-            <div className="eq big">399 removed = <span className="g">87 merged</span> + <span className="r">312 lost</span></div>
+            <div className="eq big">G2: 2,000 → 1,960 = <span className="r">40 SKUs removed</span>, 0 changed</div>
           </Block>
-          <Block title="Invariants" lead="Plain rules about your data, checked at any saved step." note="Predicates over a whole world, checked at any checkpoint.">
-            <div className="eq">rows(customers.csv) ≥ 4,913</div>
-            <div className="eq">| Σ deals.amount − Σ₀ | ≤ ε · Σ₀</div>
+          <Block title="Invariants" lead="Plain rules about your data, checked at any saved step. GEARGO has four." note="Prices, fitment and stock are measured against the base catalog, by SKU.">
+            <div className="eq small-rule">No product removed: rows(products.csv) ≥ 2,000</div>
+            <div className="eq small-rule">Prices within ±20%: max |<V>p</V> / <V>p</V>₀ − 1| ≤ 0.2</div>
+            <div className="eq small-rule">Fitment set unless universal fit: unfit = 0</div>
+            <div className="eq small-rule">Stock not zeroed by a catalog agent: zeroed = 0</div>
           </Block>
-          <Block title="Bisect" lead="Check the middle step, keep the half that broke, repeat: 8 steps need only 3 checks." note="n = 8 steps → ⌈log₂ 8⌉ = 3 checks.">
+          <Block title="Bisect" lead="Check both ends, then the middle step, and keep the half that broke. 8 steps need only 3 checks." note="G4 has 5 steps → ⌈log₂ 5⌉ = 3 checks after the endpoints.">
             <BisectAnim />
           </Block>
-          <Block title="Time-travel query" lead="Follow one customer across every checkpoint and see exactly when they vanished." note="Scan checkpoints for a key and report where it disappears. Reads are cached by hash.">
+          <Block title="Time-travel query" lead="Follow one product across every checkpoint and see exactly when it vanished." note="Scan checkpoints for a key and report where it disappears. Reads are cached by hash.">
             <div className="eq">first = min {"{"} <V>i</V> : <V>k</V> ∉ <V>K</V>(<V>c</V><sub>i</sub>) {"}"}</div>
-            <div className="eq small mono">Carla Roberts: c₀ … c₃ ✓ → c₄ ✗</div>
+            <div className="eq small mono">tesla-model-y-frunk-organizer (G2): c₀ … c₂ ✓ → c₃ ✗</div>
           </Block>
-          <Block title="Cost per run" lead="One small serverless call per step and no sandboxes, so a full run costs a fraction of a cent." note="One batched exec per step, no sandbox compute.">
-            <div className="eq">calls ≈ Σ<sub>agents</sub> (steps + 1) + 1 ≈ 28</div>
-            <div className="eq">28 × $0.05 / 1,000 ≈ <b>$0.0014</b></div>
+          <Block title="Cost per run" lead="One small serverless call per step and no sandboxes, so a whole rehearsal costs a fraction of a cent." note="Measured on Archil: 8 agents, 45 checkpoints on 8 disks, run + fix + rollback.">
+            <div className="eq">GEARGO rehearsal: 55 exec calls · 2 branches · 0 sandboxes</div>
+            <div className="eq">55 × $0.05 / 1,000 ≈ <b>$0.0028</b></div>
           </Block>
         </div>
       </section>
 
       <section className="sec">
-        <div className="kick mono">Swarm</div>
+        <div className="kick mono">The GEARGO team</div>
         <h2>8 agents, one review.</h2>
         <SwarmTable />
       </section>
@@ -364,7 +369,7 @@ export function Landing() {
         <div className="kick mono">Built on</div>
         <div className="built-row">
           <div><b>Archil</b><span>disks, checkpoints, branches and serverless exec</span></div>
-          <div><b>Keenable</b><span>web search for the Enricher, with source URLs</span></div>
+          <div><b>Keenable</b><span>web search for the Translator, with source URLs</span></div>
           <div><b>GitHub</b><span>a data-impact comment on every pull request</span></div>
         </div>
       </section>
@@ -375,7 +380,7 @@ export function Landing() {
           Open the app <span className="arrow">→</span>
         </a>
       </section>
-      <footer className="bd-foot mono">Bites the Data · built at Agents Need Solid Ground</footer>
+      <footer className="bd-foot mono">Bites the Data · built at Agents Need Solid Ground<br />Example data: 55 real GEARGO products + 1,945 generated in the same format.</footer>
     </div>
   );
 }

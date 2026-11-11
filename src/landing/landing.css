@@ -158,7 +158,8 @@
 .bd-art-gos { display: none; }
 
 /* ---------- v3: numbers ---------- */
-.nums .num-row { font-family: "BD Display", sans-serif; font-size: clamp(30px, 3.4vw, 46px); line-height: 1; letter-spacing: -0.03em; white-space: nowrap; }
+.nums .num-row { font-family: "BD Display", sans-serif; font-size: clamp(24px, 3vw, 42px); line-height: 1.05; letter-spacing: -0.03em; }
+.nums .num-math { font-family: "BD Inter", sans-serif; font-weight: 700; letter-spacing: -0.02em; }
 .nums .num-row small { font-size: .5em; letter-spacing: -0.01em; color: var(--mute); }
 .nums .hot .num-row, .nums .hot .num-row small { color: var(--bad); }
 .nums .lbl { font-size: 15px; color: var(--ink); font-weight: 600; margin-top: 6px; line-height: 1.3; }
@@ -170,6 +171,15 @@
 .term-lbl.us { color: var(--blue); }
 .term-cap { margin: 4px 0 0; font-size: 14px; color: var(--mute); }
 .term-git { flex: 1; }
+
+.ex-lbl { font-size: 12.5px; color: var(--ink); background: var(--blue-t); display: inline-block; padding: 4px 10px; margin: -8px 0 18px; }
+.eq.small-rule { font-family: "BD Inter", sans-serif; font-size: 14px; line-height: 1.4; }
+.eq.small-rule var { font-family: "Cambria Math", Georgia, serif; }
+.mini-t td:nth-child(2) { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.sw th.sw-rule { white-space: normal; min-width: 76px; line-height: 1.25; }
+.sw .sw-m, .sw-legend { display: none; }
+.sw-dots { display: inline-flex; gap: 5px; }
+.sw-dots .sdot { width: 10px; height: 10px; }
 
 /* ---------- v3: GitHub PR section ---------- */
 .pr-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 28px; align-items: start; }
@@ -246,7 +256,7 @@
 .cp + .cp::before { content: ""; position: absolute; top: 8px; right: 50%; width: 100%; height: 2px; background: var(--ink); }
 .cmp-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmp-line s { color: var(--bad); }
-.mini-bis { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; }
+.mini-bis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
 .mini-bis span { text-align: center; font-family: "BD Mono", monospace; font-size: 11px; padding: 3px 0; border: 1.5px solid; }
 .mini-bis .ok { color: var(--ok); background: var(--ok-t); border-color: var(--ok); }
 .mini-bis .bad { color: var(--bad); background: var(--bad-t); border-color: var(--bad); }
@@ -290,7 +300,11 @@
   .bd-nav nav a:not(.bd-navcta) { display: none; }
   .nums { grid-template-columns: repeat(2, 1fr); }
   .nums > div { border-left: none !important; }
-  .mini-t td:nth-child(4), .mini-t th:nth-child(4) { display: none; }
+  .mini-t td:nth-child(2) { max-width: 120px; }
+  .mini-t { font-size: 11.5px; }
+  .mini-t td, .mini-t th { padding: 6px 6px; }
+  .git-out { font-size: 12px; white-space: pre; overflow-x: auto; padding: 12px; }
+  .term-sum { font-size: 14px; }
   .gh-av, .gh-card::before { display: none; }
   .gh-body { padding: 12px; }
   .gh-body th, .gh-body td { white-space: normal; padding: 4px 6px; }
@@ -303,6 +317,9 @@
   .sw td, .sw th { padding: 8px 8px; white-space: normal; font-size: 13px; }
   .sw th { font-size: 10px; letter-spacing: .04em; }
   .sw-id { display: none; }
+  .sw .sw-rule { display: none; }
+  .sw .sw-m { display: table-cell; }
+  .sw-legend { display: block; font-size: 12px; color: var(--mute); margin: 8px 0 0; }
   .gt-title { letter-spacing: -0.04em; }
 }
 @media (prefers-reduced-motion: reduce) {

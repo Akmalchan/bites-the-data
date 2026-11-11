@@ -1,122 +1,124 @@
-// "Watch it happen": charts drawn to scale from a real scripted run (seed 42).
-// Values were measured by running the scripted agents on the seeded CRM world:
-// customers.csv row count and round(sum(deals.amount)) at every checkpoint.
+// "Watch it happen": the GEARGO team of 8, drawn to scale from a real scripted run
+// (2,000 products: 55 real GEARGO + 1,945 generated). Values measured per checkpoint.
 
-const A_ROWS = [5000, 5000, 5000, 5000, 5000, 5000, 5000]; // Formatter (phones), 6 steps
-const B_ROWS = [5000, 5000, 5000, 4913, 4601, 4601, 4601, 4601, 4601]; // Merger (fuzzy), 8 steps
-const C_ROWS = [5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000]; // Enricher (web), 8 steps with Keenable
-const B_DEALS = [72574000, 72574000, 72574000, 72574000, 72574000, 72574000, 34736745, 34736745, 34736745];
-const COL = { A: "#2F7DD1", B: "#E07A1F", C: "#0F9E8E" };
+// Steps per agent (G3 runs 4 when Keenable is configured; its product count never changes).
+const LANES: { id: string; steps: number }[] = [
+  { id: "G1", steps: 4 }, { id: "G3", steps: 4 }, { id: "G4", steps: 5 }, { id: "G5", steps: 6 },
+  { id: "G6", steps: 7 }, { id: "G7", steps: 5 }, { id: "G8", steps: 4 },
+];
+const G2_ROWS = [2000, 2000, 2000, 1960, 1960, 1960]; // Catalog cleaner (fuzzy)
+const G4_BIG = [0, 0, 0, 0, 60, 60]; // prices moved more than ±20% vs base, by step
+const BAD = "#D7263D";
+const G2C = "#E07A1F";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export function RowsChart() {
-  const W = 560, H = 300, L = 58, R = 18, T = 22, Bm = 40;
-  const y0 = 4400, y1 = 5100;
-  const x = (s: number) => L + (s / 8) * (W - L - R);
+  const W = 560, H = 300, L = 58, R = 18, T = 26, Bm = 40;
+  const y0 = 1930, y1 = 2015, maxS = 7;
+  const x = (s: number) => L + (s / maxS) * (W - L - R);
   const y = (v: number) => T + ((y1 - v) / (y1 - y0)) * (H - T - Bm);
-  const path = (vals: number[]) => vals.map((v, i) => `${i ? "L" : "M"}${x(i)},${y(v)}`).join(" ");
   return (
     <figure className="ch-card">
       <figcaption>
-        <b>customers.csv rows by step</b>
+        <b>products.csv · products in catalog by step</b>
         <span className="ch-leg">
-          <i style={{ background: COL.A }} />A Formatter <i style={{ background: COL.B }} />B Merger <i style={{ background: COL.C }} />C Enricher
+          <i style={{ background: G2C }} />G2 Catalog cleaner <i style={{ background: "#9AA0AA" }} />7 other agents
         </span>
       </figcaption>
-      <div className="ch-scroll"><svg viewBox={`0 0 ${W} ${H}`} className="ch-svg ch-rows" role="img" aria-label="Rows by step: A and C stay at 5,000. B drops to 4,913 at step 3 (duplicates merged) and to 4,601 at step 4 (312 real customers lost).">
-        {[4500, 4750, 5000].map((v) => (
-          <g key={v}>
-            <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className="ch-grid" />
-            <text x={L - 8} y={y(v) + 4} textAnchor="end" className="ch-ax">{fmt(v)}</text>
-          </g>
-        ))}
-        {Array.from({ length: 9 }, (_, s) => (
-          <text key={s} x={x(s)} y={H - Bm + 18} textAnchor="middle" className="ch-ax">{s === 0 ? "base" : s}</text>
-        ))}
-        <text x={(L + W - R) / 2} y={H - 4} textAnchor="middle" className="ch-ax">agent step</text>
-        {/* the rule */}
-        <line x1={L} x2={W - R} y1={y(4913)} y2={y(4913)} className="ch-rule" />
-        <text x={W - R} y={y(4913) - 6} textAnchor="end" className="ch-rulet">rule: rows ≥ 4,913 (true duplicates only)</text>
-        <path d={path(C_ROWS)} stroke={COL.C} className="ch-line" />
-        <path d={path(A_ROWS)} stroke={COL.A} className="ch-line" strokeDasharray="6 5" />
-        <path d={path(B_ROWS)} stroke={COL.B} className="ch-line" />
-        {B_ROWS.map((v, i) => (
-          <circle key={i} cx={x(i)} cy={y(v)} r={i === 4 ? 6.5 : 3.5} fill={i === 4 ? "#fff" : COL.B} stroke={i === 4 ? "#D7263D" : COL.B} strokeWidth={i === 4 ? 3 : 1.5} />
-        ))}
-        <text x={x(8) - 4} y={y(5000) - 8} textAnchor="end" className="ch-lab">A, C: 5,000 rows, nothing lost</text>
-        <text x={x(3) - 10} y={y(4913) + 18} textAnchor="end" className="ch-lab mute">step 3: −87 exact duplicates (fine)</text>
-        <g>
-          <line x1={x(4)} x2={x(4) + 40} y1={y(4601)} y2={y(4601) + 34} className="ch-call" />
-          <text x={x(4) + 44} y={y(4601) + 38} className="ch-lab bad">312 real customers lost</text>
-          <text x={x(4) + 44} y={y(4601) + 54} className="ch-lab mute">step 4: fuzzy-merge</text>
-        </g>
-      </svg></div>
+      <div className="ch-scroll">
+        <svg viewBox={`0 0 ${W} ${H}`} className="ch-svg ch-rows" role="img" aria-label="Products by step: seven agents stay at 2,000. G2 drops to 1,960 at step 3 (40 products removed by fuzzy dedupe).">
+          {[1940, 1960, 1980, 2000].map((v) => (
+            <g key={v}>
+              <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className="ch-grid" />
+              <text x={L - 8} y={y(v) + 4} textAnchor="end" className="ch-ax">{fmt(v)}</text>
+            </g>
+          ))}
+          {Array.from({ length: maxS + 1 }, (_, s) => (
+            <text key={s} x={x(s)} y={H - Bm + 18} textAnchor="middle" className="ch-ax">{s === 0 ? "base" : s}</text>
+          ))}
+          <text x={(L + W - R) / 2} y={H - 4} textAnchor="middle" className="ch-ax">agent step</text>
+          {LANES.map((l) => (
+            <line key={l.id} x1={x(0)} x2={x(l.steps)} y1={y(2000)} y2={y(2000)} stroke="#9AA0AA" strokeWidth={2} opacity={0.55} />
+          ))}
+          <line x1={L} x2={W - R} y1={y(2000) - 0.5} y2={y(2000) - 0.5} className="ch-rule" />
+          <text x={W - R} y={y(2000) - 9} textAnchor="end" className="ch-rulet">rule: no product removed (≥ 2,000)</text>
+          <path d={G2_ROWS.map((v, i) => `${i ? "L" : "M"}${x(i)},${y(v)}`).join(" ")} stroke={G2C} className="ch-line" />
+          {G2_ROWS.map((v, i) => (
+            <circle key={i} cx={x(i)} cy={y(v)} r={i === 3 ? 6.5 : 3.5} fill={i === 3 ? "#fff" : G2C} stroke={i === 3 ? BAD : G2C} strokeWidth={i === 3 ? 3 : 1.5} />
+          ))}
+          <text x={x(maxS)} y={y(2000) + 18} textAnchor="end" className="ch-lab mute">7 other agents: 2,000 products, none removed</text>
+          <line x1={x(3)} x2={x(3) + 36} y1={y(1960)} y2={y(1960) + 26} className="ch-call" />
+          <text x={x(3) + 40} y={y(1960) + 30} className="ch-lab bad">40 products removed</text>
+          <text x={x(3) + 40} y={y(1960) + 46} className="ch-lab mute">G2 step 3: fuzzy dedupe</text>
+        </svg>
+      </div>
     </figure>
   );
 }
 
 export function DealsChart() {
-  const W = 360, H = 300, L = 52, R = 10, T = 22, Bm = 40;
-  const max = 80_000_000;
-  const bw = (W - L - R) / 9;
+  const W = 360, H = 300, L = 40, R = 10, T = 26, Bm = 40;
+  const max = 80;
+  const bw = (W - L - R) / G4_BIG.length;
   const y = (v: number) => T + (1 - v / max) * (H - T - Bm);
   return (
     <figure className="ch-card">
       <figcaption>
-        <b>B · total deal value by step</b>
-        <span className="ch-leg">crm.sqlite, sum(deals.amount)</span>
+        <b>G4 · prices moved over ±20%</b>
+        <span className="ch-leg">products, vs base, by step</span>
       </figcaption>
-      <svg viewBox={`0 0 ${W} ${H}`} className="ch-svg" role="img" aria-label="Deal value: $72.6M through step 5, then $34.7M from step 6 when 267 deal amounts were divided by 100.">
+      <svg viewBox={`0 0 ${W} ${H}`} className="ch-svg" role="img" aria-label="G4 price normalizer: no price moves more than 20% through step 3; 60 prices divided by 100 at step 4.">
         {[0, 20, 40, 60, 80].map((m) => (
           <g key={m}>
-            <line x1={L} x2={W - R} y1={y(m * 1e6)} y2={y(m * 1e6)} className="ch-grid" />
-            <text x={L - 8} y={y(m * 1e6) + 4} textAnchor="end" className="ch-ax">${m}M</text>
+            <line x1={L} x2={W - R} y1={y(m)} y2={y(m)} className="ch-grid" />
+            <text x={L - 8} y={y(m) + 4} textAnchor="end" className="ch-ax">{m}</text>
           </g>
         ))}
-        {B_DEALS.map((v, i) => (
+        {G4_BIG.map((v, i) => (
           <g key={i}>
-            <rect x={L + i * bw + 4} y={y(v)} width={bw - 8} height={y(0) - y(v)} fill={i >= 6 ? "#D7263D" : "#E07A1F"} opacity={i >= 6 ? 1 : 0.85} />
+            {v > 0 ? <rect x={L + i * bw + 6} y={y(v)} width={bw - 12} height={y(0) - y(v)} fill={BAD} /> : <rect x={L + i * bw + 6} y={y(0) - 2} width={bw - 12} height={2} fill="#12965A" />}
             <text x={L + i * bw + bw / 2} y={H - Bm + 18} textAnchor="middle" className="ch-ax">{i === 0 ? "base" : i}</text>
           </g>
         ))}
-        <text x={W - R - 2} y={y(B_DEALS[6]) - 26} textAnchor="end" className="ch-lab bad">267 deals ÷100</text>
-        <text x={W - R - 2} y={y(B_DEALS[6]) - 10} textAnchor="end" className="ch-lab mute">$72.6M → $34.7M</text>
+        <text x={L + 4 * bw - 4} y={y(60) + 4} textAnchor="end" className="ch-lab bad">60 prices ÷100</text>
+        <text x={L + 4 * bw - 4} y={y(60) + 20} textAnchor="end" className="ch-lab mute">step 4: "tiyin to sum"</text>
+        <text x={L + 2 * bw} y={y(0) - 12} textAnchor="middle" className="ch-lab mute">0 through step 3</text>
         <text x={(L + W - R) / 2} y={H - 4} textAnchor="middle" className="ch-ax">agent step</text>
       </svg>
     </figure>
   );
 }
 
-const DIFF_ROWS: { tag: "lost" | "merged" | "changed"; where: string; key: string; what: string; before: string; after: string }[] = [
-  { tag: "lost", where: "customers.csv", key: "id 63", what: "Carla Roberts", before: "carla.roberts@falconbridge.co", after: "deleted" },
-  { tag: "lost", where: "customers.csv", key: "id 591", what: "Simona Evans", before: "simona.evans@brightline.ai", after: "deleted" },
-  { tag: "merged", where: "customers.csv", key: "id 245", what: "Yuki Hill", before: "yuki.hill@pinebridge.com", after: "email still present" },
-  { tag: "changed", where: "crm.sqlite › deals", key: "deal 14", what: "amount", before: "187,500", after: "1,875" },
-  { tag: "changed", where: "config.json", key: "path", what: "dedupe.strategy", before: "exact", after: "fuzzy" },
+const DIFF_ROWS: { tag: string; cls: "lost" | "warn" | "merged"; agent: string; sku: string; slug: string; field: string; before: string; after: string; ok?: boolean }[] = [
+  { tag: "removed", cls: "lost", agent: "G2@3", sku: "GG-0018-TESLAMODE", slug: "tesla-model-y-frunk-organizer", field: "row", before: "620,000 UZS", after: "removed" },
+  { tag: "÷100", cls: "warn", agent: "G4@4", sku: "GG-0003-BYDSONGP", slug: "byd-song-plus-led-headlight-assembly", field: "price", before: "2,800,000", after: "29,130" },
+  { tag: "fitment", cls: "lost", agent: "G5@5", sku: "GG-0017-TESLAMODE", slug: "tesla-model-3-y-aluminum-pedal-set", field: "compatibleVehicleSlugs", before: "tesla-model-3|tesla-model-y", after: "empty" },
+  { tag: "stock", cls: "warn", agent: "G6@6", sku: "GG-0012-LIAUTOL8", slug: "li-auto-l8-rear-seat-tablet-holder", field: "stockOnHand", before: "26", after: "0" },
+  { tag: "routine", cls: "merged", agent: "G1@2", sku: "GG-0001-BYDSEAGUL", slug: "byd-seagull-tpe-floor-mats", field: "price", before: "790,000", after: "819,230 (+3.7%)", ok: true },
 ];
 
 export function DiffExample() {
   return (
     <figure className="ch-card ch-wide">
       <figcaption>
-        <b>Typed diff · base → B@8</b>
-        <span className="ch-leg">5 real rows from 399 removed (312 lost, 87 merged) and 267 deals ÷100</span>
+        <b>Typed diff · products.csv, keyed by sku</b>
+        <span className="ch-leg">5 real rows from the run: one per rogue agent, plus one routine change</span>
       </figcaption>
       <div className="dx-wrap">
         <table className="dx">
           <thead>
-            <tr><th /><th>File</th><th>Key</th><th>Field</th><th>Before → after</th></tr>
+            <tr><th /><th>Agent</th><th>Product</th><th>Field</th><th>Before → after</th></tr>
           </thead>
           <tbody>
             {DIFF_ROWS.map((r) => (
-              <tr key={r.key + r.what} className={r.tag}>
-                <td><b className={`tag ${r.tag === "lost" ? "lost" : r.tag === "merged" ? "merged" : "warn"}`}>{r.tag}</b></td>
-                <td className="mono">{r.where}</td>
-                <td className="mono">{r.key}</td>
-                <td>{r.what}</td>
+              <tr key={r.sku} className={r.ok ? "" : r.cls === "lost" ? "lost" : "changed"}>
+                <td><b className={`tag ${r.cls}`}>{r.tag}</b></td>
+                <td className="mono">{r.agent}</td>
+                <td className="mono">{r.slug}</td>
+                <td className="mono">{r.field}</td>
                 <td className="mono">
-                  <s>{r.before}</s> <span className="dx-arr">→</span> <b className={r.tag === "merged" ? "g" : "r"}>{r.after}</b>
+                  <s>{r.before}</s> <span className="dx-arr">→</span> <b className={r.ok ? "g" : "r"}>{r.after}</b>
                 </td>
               </tr>
             ))}
