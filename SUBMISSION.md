@@ -35,3 +35,8 @@ Archil (disks, exec, checkpoints, branches), Keenable (web search), TypeScript, 
 ## Team
 Akmal Shovkatov
 Dias Almat
+
+
+## GEARGO catalog demo
+
+The default demo uses GEARGO's real Vendure catalog format: **55 real GEARGO products + 1,945 generated in the same format** (2,000 products, whole-UZS prices). A rogue "Catalog cleaner (fuzzy)" agent removes 40 products, wipes fitment on 25, divides 60 prices by 100 and zeroes stock on 45 (including the real PR #106 cases); Bites the Data names each first bad step, writes a fix prompt, and forks a safe cleaner from the last good Archil checkpoint.

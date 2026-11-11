@@ -4,6 +4,18 @@
 
 Table demos start at 9:30 pm: judges walk up to the table, and every project is judged in every track. Keep the app open on **base → B** with the cards visible. Use the **30-second version** when a judge is passing by, and the **2-minute version** when they stop (the full run-through below is the long form).
 
+## GEARGO catalog (default scenario, show this first)
+
+Data: GEARGO's real Vendure seed (products.csv, sellers/rax-motors-brake-pads.json, translations/*.json), read from the GEARGO repo at seed time. **55 real GEARGO products + 1,945 generated in the same format** (2,000 products; prices in whole UZS).
+
+1. **Run agents** (header: "GEARGO catalog", "3 agents"). Repricer (FX) raises 800 prices by 2.2–5.3% (clean). Translator (web) adds ru/uz names for 2,000 products and looks up brand sites with Keenable (clean). Catalog cleaner (fuzzy) is the rogue.
+2. **Click the red card** → What went wrong: *"Catalog cleaner (fuzzy) removed 40 products at step 3, wiped fitment on 25 at step 4, divided 60 prices by 100 at step 5, and zeroed stock on 45 at step 6."* Tabs: Removed products 40 · Prices ÷100 60 (e.g. byd-song-plus-led-headlight-assembly 2,800,000 UZS → 29,130 UZS) · Fitment 25 (tesla-model-3-y-aluminum-pedal-set) · Stock 45. These include the real PR #106 cases (tesla-model-y-frunk-organizer and byd-han-ambient-light-kit removed, 4 prices ÷100, 1 fitment, 3 stock).
+3. **Copy fix prompt**: task, the 4 broken rules (No product removed · Prices change within ±20% · Fitment set unless universal fit · Stock not zeroed by a catalog agent) with first bad steps found by bisect, examples, the Archil checkpoint to restore (step 2), and "UZS has no minor unit".
+4. **Fix it: fork from step 2 with Catalog cleaner (exact)** → real Archil branch, safe steps; Compare: "restored 40 products, restored 60 prices"; toast "0 products lost".
+5. Swarm × 8 runs on the **Demo CRM** scenario (switch in the header).
+
+Measured on Archil tonight: Run agents 13.7 s, Fix it 6.5 s, roll back via Archil branch 153 ms, a full rehearsal ~86 exec calls.
+
 ## The main path (the one to show)
 
 1. **Run agents.** Three agents fork the same customer database on Archil; every step is a checkpoint.
