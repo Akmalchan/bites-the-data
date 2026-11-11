@@ -6,7 +6,7 @@ import { StepContext, type ToolCall } from "./agents/context.ts";
 import { LLM_MODEL, llmAvailable, runLlmAgent } from "./agents/llm.ts";
 import { AGENTS, FORK_VARIANTS, activeSteps, forkVariantDef, swarmDefs, type AgentDef } from "./agents/scripted.ts";
 import { keenableMode, keenableStats } from "./keenable.ts";
-import { GEARGO_AGENTS, GEARGO_FORK_VARIANTS, catalogInfo, geargoAvailable, geargoFiles, geargoVariant, setBaseline } from "./geargo.ts";
+import { GEARGO_AGENTS, GEARGO_FORK_VARIANTS, SAFE_FOR, catalogInfo, geargoAvailable, geargoFiles, geargoVariant, setBaseline } from "./geargo.ts";
 import { diffWorlds, type WorldDiffResult } from "./diff/engine.ts";
 import type { FileDetail, Manifest, WorldDiff } from "./diff/types.ts";
 import { evaluateInvariant } from "./invariant.ts";
@@ -275,7 +275,7 @@ export class DeltaApp {
     this.lastBisect = undefined;
     this.worlds = this.worlds.filter((w) => w.kind === "base");
     this.swarmSize = Math.max(0, Math.min(50, Math.floor(swarm)));
-    if (this.swarmSize && this.scenario === "geargo") throw new Error("Swarm runs on the Demo CRM scenario; switch scenario to use 8 agents");
+    if (this.scenario === "geargo") this.swarmSize = 0; // GEARGO always runs its fixed team of 8
     this.defs = this.swarmSize ? swarmDefs(this.swarmSize) : this.baseAgents();
     if (this.swarmSize) mode = "scripted";
     this.agents = this.defs.map((a) => ({ id: a.id, name: a.name, role: a.role, status: "running", mode, stepsDone: 0, stepsTotal: mode === "llm" ? 8 : activeSteps(a).length }));
@@ -536,7 +536,9 @@ export class DeltaApp {
     const restore = lastGood ? { world: lastGood.id, ref: lastGood.ref, stepName: lastGood.stepName } : { world: "base", ref: this.worlds.find((w) => w.id === "base")?.ref, stepName: "original catalog" };
     const def = this.defs.find((x) => x.id === agentId) ?? this.baseAgents().find((x) => x.id === agentId);
     const backend = this.store.info();
-    const csv = ["sku,name,price_uzs,brand", ...removed.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))].join("\n");
+    const firstTab = [removed, prices, fitment, stock].find((x) => x.length) ?? [];
+    const csvHeader = removed.length ? "sku,name,price_uzs,brand" : "sku,product,change";
+    const csv = [csvHeader, ...firstTab.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))].join("\n");
     const prompt = [
       `# Fix request: ${a.name} damaged the GEARGO catalog`,
       ``,
@@ -557,8 +559,8 @@ export class DeltaApp {
       ``,
       `## Instructions`,
       `1. Restore products.csv from checkpoint ${restore.world}${restore.ref ? ` (\`${restore.ref}\`)` : ""}.`,
-      `2. Redo the dedupe with exact SKU matching only. Products for the same vehicle with similar names are different products.`,
-      `3. Never divide prices: UZS has no minor unit. Keep compatibleVehicleSlugs unless isUniversalFit is true. Do not zero stock from a partial feed.`,
+      removed.length ? `2. Redo the dedupe with exact SKU matching only. Products for the same vehicle with similar names are different products.` : prices.length ? `2. Never divide prices: UZS has no minor unit, every price is whole sum.` : fitment.length ? `2. Keep compatibleVehicleSlugs unless isUniversalFit is true; flag unknown aliases for review instead of clearing them.` : `2. Do not zero stock because an item is missing from a partial feed; report it for a recount.`,
+      `3. Change only what your task needs; leave every other column as it was.`,
       `4. Verify: rows(products.csv) >= ${catalogInfo.total}, every price within ±20% of before, fitment set unless universal fit, no stock zeroed.`,
     ]
       .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
@@ -568,10 +570,10 @@ export class DeltaApp {
       { id: "prices", label: "Prices ÷100", columns: ["sku", "product", "price before → after"], rows: prices },
       { id: "fitment", label: "Fitment", columns: ["sku", "product", "vehicles"], rows: fitment },
       { id: "stock", label: "Stock", columns: ["sku", "product", "stock"], rows: stock },
-    ];
+    ].filter((t, _, all) => t.rows.length || all.every((x) => !x.rows.length));
     return {
       agent: a.id, name: a.name, end: end.id, sentence, rules, lost: [], lostCount: removed.length, merged: 0, deals: [], restore, prompt, csv, tabs,
-      fixVariant: "Catalog cleaner (exact)", csvName: `removed_products_${a.id}.csv`,
+      fixVariant: SAFE_FOR[a.name] ?? "Catalog cleaner (exact SKU)", csvName: `${removed.length ? "removed_products" : "affected_products"}_${a.id}.csv`,
     };
   }
 
@@ -754,6 +756,11 @@ export class DeltaApp {
     let customers: number | null = null;
     let dealTotal: number | null = null;
     if (m["customers.csv"]) customers = parseCsv((await r.read("customers.csv")).toString("utf8")).rows.length;
+    if (m["products.csv"]) {
+      const t = parseCsv((await r.read("products.csv")).toString("utf8"));
+      customers = t.rows.length; // "rows" lane metric: products in the catalog
+      dealTotal = t.rows.reduce((n, x) => n + (Number(x.price) || 0), 0); // "value" lane metric: catalog value (sum of prices)
+    }
     if (m["crm.sqlite"]) {
       let p = r.localPath?.("crm.sqlite") ?? null;
       if (!p) {
@@ -796,7 +803,8 @@ export class DeltaApp {
       }
       agents.push({ id: a.id, steps: rows });
     }
-    return { base, agents, backend: this.store.info().label };
+    const labels = this.scenario === "geargo" ? { rows: "products.csv", value: "catalog value" } : { rows: "customers.csv", value: "deal value" };
+    return { base, agents, labels, backend: this.store.info().label };
   }
 
   async bisect(agentId: string, invariant: string, quiet = false): Promise<BisectResult> {

@@ -150,7 +150,7 @@ function planDamage(rows: Row[]) {
 }
 
 const repricer: AgentDef = {
-  id: "A",
+  id: "G1",
   name: "Repricer (FX)",
   role: "Reprice imports for the new FX rate",
   goal: "Raise prices of imported products in line with the new USD/UZS rate, keeping whole UZS.",
@@ -206,19 +206,34 @@ const repricer: AgentDef = {
   ],
 };
 
-const cleanerSteps = (fuzzy: boolean): AgentDef["steps"] => [
-  {
-    name: "Scan catalog for duplicates",
-    thought: "Look for products that might be listed twice.",
-    run: async (ctx) => {
-      const t = await ctx.readCsv(CSV);
-      await ctx.writeText("notes/cleanup_plan.md", `# Cleanup plan\n\n- ${fmt(t.rows.length)} products\n- merge duplicates\n- normalize fitment, prices and stock\n`);
-    },
+type Step = AgentDef["steps"][number];
+type Ctx = Parameters<Step["run"]>[0];
+const note = (name: string, thought: string, path: string, text: string): Step => ({ name, thought, run: async (ctx: Ctx) => void (await ctx.writeText(path, text)) });
+const editRows = (name: string, thought: string, label: string, fn: (rows: Row[]) => number): Step => ({
+  name,
+  thought,
+  run: async (ctx: Ctx) => {
+    const t = await ctx.readCsv(CSV);
+    const n = await ctx.compute(label, () => fn(t.rows), (n) => `${fmt(n)} rows changed`);
+    await ctx.writeCsv(CSV, t.columns, t.rows, `${fmt(n)} rows changed`);
   },
+});
+const scan = (name: string, thought: string, path: string): Step => ({
+  name,
+  thought,
+  run: async (ctx: Ctx) => {
+    const t = await ctx.readCsv(CSV);
+    await ctx.writeJson(path, { products: t.rows.length, at: "base" }, `${fmt(t.rows.length)} products`);
+  },
+});
+
+// ---- 2. Catalog cleaner
+const cleanerSteps = (fuzzy: boolean): Step[] => [
+  scan("Scan catalog for duplicates", "Look for products that might be listed twice.", "notes/cleanup_scan.json"),
   {
     name: "Build SKU index",
     thought: "Index products by SKU so merges are cheap.",
-    run: async (ctx) => {
+    run: async (ctx: Ctx) => {
       const t = await ctx.readCsv(CSV);
       await ctx.writeJson(".clean/sku_index.json", Object.fromEntries(t.rows.map((r) => [String(r.sku), String(r.slug)])), `${t.rows.length} SKUs`);
     },
@@ -227,7 +242,7 @@ const cleanerSteps = (fuzzy: boolean): AgentDef["steps"] => [
     ? {
         name: "Merge near-duplicate products",
         thought: "Products for the same vehicle with similar names look like duplicates; keep one of each.",
-        run: async (ctx) => {
+        run: async (ctx: Ctx) => {
           const t = await ctx.readCsv(CSV);
           const kept = await ctx.compute("merge_fuzzy.py --by vehicle,name", () => t.rows.filter((r) => !damageSets.removed.has(String(r.slug))), (k) => `${t.rows.length - k.length} near-duplicates merged`);
           await ctx.writeCsv(CSV, t.columns, kept);
@@ -236,70 +251,145 @@ const cleanerSteps = (fuzzy: boolean): AgentDef["steps"] => [
     : {
         name: "Merge exact duplicate SKUs",
         thought: "Only identical SKUs are duplicates; names that merely look alike are different products.",
-        run: async (ctx) => {
+        run: async (ctx: Ctx) => {
           const t = await ctx.readCsv(CSV);
           const seen = new Set<string>();
           const kept = await ctx.compute("merge_exact.py --by sku", () => t.rows.filter((r) => (seen.has(String(r.sku)) ? false : (seen.add(String(r.sku)), true))), (k) => `${t.rows.length - k.length} exact duplicates merged`);
           await ctx.writeCsv(CSV, t.columns, kept);
         },
       },
-  ...(fuzzy
-    ? [
-        {
-          name: "Normalize fitment fields",
-          thought: "Multi-vehicle fitment strings look malformed; clear them so they can be re-imported.",
-          run: async (ctx: Parameters<AgentDef["steps"][number]["run"]>[0]) => {
-            const t = await ctx.readCsv(CSV);
-            let n = 0;
-            for (const r of t.rows) if (damageSets.fitment.has(String(r.slug))) { r["product:compatibleVehicleSlugs"] = ""; n++; }
-            await ctx.writeCsv(CSV, t.columns, t.rows, `${n} fitments cleared`);
-          },
-        },
-        {
-          name: "Normalize prices to major units",
-          thought: "Some prices look like they are stored in tiyin; divide by 100 to get sum.",
-          run: async (ctx: Parameters<AgentDef["steps"][number]["run"]>[0]) => {
-            const t = await ctx.readCsv(CSV);
-            let n = 0;
-            for (const r of t.rows) { const v = damageSets.prices.get(String(r.slug)); if (v !== undefined) { r.price = String(v); n++; } }
-            await ctx.writeCsv(CSV, t.columns, t.rows, `${n} prices ÷100`);
-          },
-        },
-        {
-          name: "Sync stock with warehouse feed",
-          thought: "Items missing from today's warehouse feed must be out of stock.",
-          run: async (ctx: Parameters<AgentDef["steps"][number]["run"]>[0]) => {
-            const t = await ctx.readCsv(CSV);
-            let n = 0;
-            for (const r of t.rows) if (damageSets.stock.has(String(r.slug)) && Number(r.stockOnHand) > 0) { r.stockOnHand = "0"; n++; }
-            await ctx.writeCsv(CSV, t.columns, t.rows, `${n} items set to 0`);
-          },
-        },
-      ]
-    : []),
+  note("Write cleanup report", "Summarize the cleanup for the catalog team.", "notes/cleanup_report.md", fuzzy ? "# Cleanup\n\nMerged near-duplicate products. No products lost.\n" : "# Cleanup\n\nExact SKU duplicates only (none found). Nothing removed.\n"),
+  { name: "Remove temporary index", thought: "Clean up the scratch index.", run: async (ctx: Ctx) => void (await ctx.remove(".clean/sku_index.json")) },
+];
+const cleaner: AgentDef = { id: "G2", name: "Catalog cleaner (fuzzy)", role: "Dedupe the catalog", goal: "Remove duplicate products from products.csv.", steps: cleanerSteps(true) };
+
+// ---- 4. Price normalizer
+const normalizerSteps = (unitsBug: boolean): Step[] => [
+  scan("Profile price magnitudes", "Check the spread of prices before touching anything.", "notes/price_profile.json"),
+  note("Detect currency unit", "Prices are in UZS; some look very large.", "notes/price_unit.md", unitsBug ? "Assumed unit: tiyin for prices over 500,000.\n" : "Unit: whole UZS (no minor unit).\n"),
+  editRows("Round prices to 10 UZS", "Round to whole 10 UZS so price tags look clean.", "round_prices.py", (rows) => {
+    let n = 0;
+    for (const r of rows) { const v = Math.round(Number(r.price) / 10) * 10; if (String(v) !== r.price) { r.price = String(v); n++; } }
+    return n;
+  }),
+  unitsBug
+    ? editRows("Convert tiyin to sum", "Some prices look like they are stored in tiyin; divide by 100 to get sum.", "tiyin_to_sum.py", (rows) => {
+        let n = 0;
+        for (const r of rows) { const v = damageSets.prices.get(String(r.slug)); if (v !== undefined) { r.price = String(v); n++; } }
+        return n;
+      })
+    : note("Keep whole UZS prices", "UZS has no minor unit, so no price is divided.", "notes/price_units_checked.md", "Checked: every price is whole UZS. Nothing divided.\n"),
+  note("Write pricing note", "Leave a note for the pricing team.", "notes/pricing.md", "# Pricing\n\nRounded to 10 UZS and normalized units.\n"),
+];
+const normalizer: AgentDef = { id: "G4", name: "Price normalizer (units)", role: "Normalize price units", goal: "Normalize price formatting and units in products.csv.", steps: normalizerSteps(true) };
+
+// ---- 5. Fitment mapper
+const fitmentSteps = (bug: boolean): Step[] => [
+  scan("Load vehicle catalog", "Collect every vehicle slug used in fitment.", "notes/vehicles.json"),
+  note("Map make/model aliases", "BYD Song Plus and Song+ are the same vehicle; map aliases.", "notes/vehicle_aliases.json", '{ "song+": "byd-song-plus", "model y": "tesla-model-y" }\n'),
+  editRows("Normalize slug case", "Vehicle slugs must be lowercase.", "lowercase_slugs.py", (rows) => {
+    let n = 0;
+    for (const r of rows) { const v = String(r["product:compatibleVehicleSlugs"]).toLowerCase(); if (v !== r["product:compatibleVehicleSlugs"]) { r["product:compatibleVehicleSlugs"] = v; n++; } }
+    return n;
+  }),
+  note("Check universal-fit flags", "Universal products need no vehicle list.", "notes/universal_check.md", "Universal-fit flags checked.\n"),
+  bug
+    ? editRows("Remap multi-vehicle fitment", "Fitment lists that don't match the alias map look stale; clear them for re-import.", "remap_fitment.py", (rows) => {
+        let n = 0;
+        for (const r of rows) if (damageSets.fitment.has(String(r.slug))) { r["product:compatibleVehicleSlugs"] = ""; n++; }
+        return n;
+      })
+    : note("Keep existing fitment", "Unknown aliases are flagged for review; existing fitment stays.", "notes/fitment_review.md", "Flagged for review only. No fitment removed.\n"),
+  note("Write fitment report", "Summarize the fitment changes.", "notes/fitment_report.md", "# Fitment\n\nAliases mapped and slugs normalized.\n"),
+];
+const fitment: AgentDef = { id: "G5", name: "Fitment mapper (vehicles)", role: "Remap vehicle fitment", goal: "Normalize vehicle fitment slugs in products.csv.", steps: fitmentSteps(true) };
+
+// ---- 6. Stock sync
+const stockSteps = (bug: boolean): Step[] => [
   {
-    name: "Write cleanup report",
-    thought: "Summarize the cleanup for the catalog team.",
-    run: async (ctx) => {
-      await ctx.writeText("notes/cleanup_report.md", fuzzy ? "# Cleanup report\n\nMerged duplicates, normalized fitment, prices and stock.\nNo products lost.\n" : "# Cleanup report\n\nMerged exact duplicate SKUs only (none found). Nothing removed.\n");
-      await ctx.remove(".clean/sku_index.json");
+    name: "Fetch warehouse feed",
+    thought: "Pull today's stock counts from the warehouse feed.",
+    run: async (ctx: Ctx) => {
+      const t = await ctx.readCsv(CSV);
+      const feed = t.rows.filter((r) => !damageSets.stock.has(String(r.slug))).map((r) => ({ sku: r.sku, stock: Number(r.stockOnHand) }));
+      await ctx.writeJson("sellers/warehouse_feed.json", feed, `${feed.length} SKUs in feed`);
     },
   },
+  scan("Match feed to SKUs", "Join the feed to the catalog by SKU.", "notes/stock_match.json"),
+  editRows("Reserve stock for open orders", "Hold one unit for each open order on well-stocked items.", "reserve.py", (rows) => {
+    let n = 0;
+    for (const r of rows) if (Number(r.stockOnHand) > 10 && hash(String(r.sku)) % 9 === 0) { r.stockOnHand = String(Number(r.stockOnHand) - 1); n++; }
+    return n;
+  }),
+  note("Flag low stock", "List items under 5 units for the buyer.", "reports/low_stock.md", "# Low stock\n\nItems under 5 units flagged.\n"),
+  editRows("Recount returns", "Returned items go back into stock.", "returns.py", (rows) => {
+    let n = 0;
+    for (const r of rows) if (Number(r.stockOnHand) > 0 && hash(String(r.slug)) % 17 === 0) { r.stockOnHand = String(Number(r.stockOnHand) + 1); n++; }
+    return n;
+  }),
+  bug
+    ? editRows("Zero items missing from feed", "Items missing from today's warehouse feed must be out of stock.", "zero_missing.py", (rows) => {
+        let n = 0;
+        for (const r of rows) if (damageSets.stock.has(String(r.slug)) && Number(r.stockOnHand) > 0) { r.stockOnHand = "0"; n++; }
+        return n;
+      })
+    : note("Report items missing from feed (dry-run)", "A partial feed is not proof of zero stock; report, don't change.", "reports/missing_from_feed.md", "Items missing from the feed were reported for a manual recount. No stock changed.\n"),
+  note("Write sync report", "Summarize the sync.", "notes/stock_sync.md", "# Stock sync\n\nFeed applied, reservations held, returns recounted.\n"),
 ];
+const stock: AgentDef = { id: "G6", name: "Stock sync (warehouse)", role: "Sync stock with warehouse", goal: "Sync stockOnHand in products.csv with the warehouse feed.", steps: stockSteps(true) };
 
-const cleaner: AgentDef = {
-  id: "B",
-  name: "Catalog cleaner (fuzzy)",
-  role: "Dedupe and normalize the catalog",
-  goal: "Remove duplicate products and normalize fitment, prices and stock in products.csv.",
-  steps: cleanerSteps(true),
+// ---- 7. SEO writer
+const seo: AgentDef = {
+  id: "G7",
+  name: "SEO writer (descriptions)",
+  role: "Rewrite short descriptions",
+  goal: "Rewrite short descriptions and feature bullets for listings with thin copy.",
+  steps: [
+    scan("Pick listings with thin copy", "Find listings whose short description is too generic.", "notes/seo_targets.json"),
+    ...[0, 1].map((half): Step => editRows(half ? "Rewrite second batch" : "Rewrite first batch", "Lead with the vehicle and the benefit, under 120 characters.", "rewrite.py", (rows) => {
+      let n = 0;
+      const targets = rows.filter((r) => hash(String(r.sku)) % 7 < 1 || hash(String(r.slug)) % 11 === 0).slice(0, 300);
+      const chunk = half ? targets.slice(150) : targets.slice(0, 150);
+      for (const r of chunk) { r["product:shortDescription"] = `${r.name}: checked fitment, ready in Tashkent in 1–2 days.`; n++; }
+      return n;
+    })),
+    editRows("Add feature bullets", "Three bullets per listing: fit, warranty, delivery.", "bullets.py", (rows) => {
+      let n = 0;
+      for (const r of rows) if (String(r["product:shortDescription"]).includes("checked fitment, ready in Tashkent")) { r["product:featureBullets"] = "Checked vehicle fitment|12-month warranty|Same-week delivery in Tashkent"; n++; }
+      return n;
+    }),
+    note("Write SEO report", "Summarize the copy changes.", "notes/seo_report.md", "# SEO\n\n300 listings rewritten.\n"),
+  ],
 };
 
-export const CLEANER_EXACT: AgentDef = { ...cleaner, name: "Catalog cleaner (exact)", role: "Dedupe by exact SKU only", steps: cleanerSteps(false) };
+// ---- 8. Promo planner
+const promo: AgentDef = {
+  id: "G8",
+  name: "Promo planner (sales)",
+  role: "Plan 5–15% sales",
+  goal: "Set sale prices 5–15% off on slow-moving products, never above list.",
+  steps: [
+    scan("Pick slow movers", "High stock and no recent sale price: good promo candidates.", "notes/promo_candidates.json"),
+    editRows("Set sale prices 5–15% off", "Discount slow movers by 5–15%, rounded to 1,000 UZS.", "promo.py", (rows) => {
+      let n = 0;
+      for (const r of rows) {
+        if (n >= 120) break;
+        if (Number(r.stockOnHand) >= 60 && !String(r["product:salePrice"])) {
+          const off = 5 + (hash(String(r.slug)) % 11);
+          r["product:salePrice"] = String(Math.round((Number(r.price) * (1 - off / 100)) / 1000) * 1000);
+          n++;
+        }
+      }
+      return n;
+    }),
+    note("Check sales stay below list", "Every sale price must be below its list price.", "notes/promo_check.md", "All sale prices are below list.\n"),
+    note("Write promo calendar", "Publish the promo plan for the week.", "notes/promo_calendar.md", "# Promo week\n\n120 items at 5–15% off.\n"),
+  ],
+};
 
 const BRANDS = ["BYD", "Tesla", "XPeng", "Li Auto", "Leapmotor"];
 const translator: AgentDef = {
-  id: "C",
+  id: "G3",
   name: "Translator (web)",
   role: "Add ru/uz names and brand sites",
   goal: "Add Russian and Uzbek product names to translations/products.json and record official brand sites.",
@@ -348,11 +438,22 @@ const translator: AgentDef = {
   ],
 };
 
-export const GEARGO_AGENTS: AgentDef[] = [repricer, cleaner, translator];
-export const GEARGO_FORK_VARIANTS = ["Catalog cleaner (exact)", "Repricer (FX)", "Translator (web)"];
+export const GEARGO_AGENTS: AgentDef[] = [repricer, cleaner, translator, normalizer, fitment, stock, seo, promo];
+const SAFE: Record<string, AgentDef> = {
+  "Catalog cleaner (exact SKU)": { ...cleaner, name: "Catalog cleaner (exact SKU)", role: "Dedupe by exact SKU only", steps: cleanerSteps(false) },
+  "Price normalizer (UZS-aware)": { ...normalizer, name: "Price normalizer (UZS-aware)", role: "Normalize prices, whole UZS", steps: normalizerSteps(false) },
+  "Fitment mapper (keep existing)": { ...fitment, name: "Fitment mapper (keep existing)", role: "Map aliases, keep fitment", steps: fitmentSteps(false) },
+  "Stock sync (dry-run)": { ...stock, name: "Stock sync (dry-run)", role: "Sync stock, report gaps", steps: stockSteps(false) },
+};
+export const SAFE_FOR: Record<string, string> = {
+  "Catalog cleaner (fuzzy)": "Catalog cleaner (exact SKU)",
+  "Price normalizer (units)": "Price normalizer (UZS-aware)",
+  "Fitment mapper (vehicles)": "Fitment mapper (keep existing)",
+  "Stock sync (warehouse)": "Stock sync (dry-run)",
+};
+export const GEARGO_FORK_VARIANTS = Object.keys(SAFE);
 export function geargoVariant(name: string): AgentDef | undefined {
-  if (name === "Catalog cleaner (exact)") return { ...CLEANER_EXACT, id: "" };
-  const d = GEARGO_AGENTS.find((a) => a.name === name);
+  const d = SAFE[name] ?? GEARGO_AGENTS.find((a) => a.name === name);
   return d ? { ...d, id: "" } : undefined;
 }
 

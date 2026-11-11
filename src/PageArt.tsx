@@ -91,14 +91,14 @@ export const PAGE_LINES: Record<ClassicPage, string> = {
 /** Original pixel avatars per agent type, with a small status corner (green = clean, red = broke). */
 export function AgentAvatar({ name, status, size = 56 }: { name: string; status?: "ok" | "bad"; size?: number }) {
   const o: Px[] = [];
-  if (/^Merger/.test(name)) {
+  if (/^(Merger|Catalog cleaner)/.test(name)) {
     rect(o, 1, 4, 5, 7, BLUE);
     rect(o, 10, 4, 5, 7, BLUE);
     rect(o, 6, 7, 4, 1, INK);
     o.push([7, 6, INK], [8, 8, INK], [6, 6, INK], [9, 8, INK]);
     rect(o, 3, 6, 1, 3, INK);
     rect(o, 12, 6, 1, 3, INK);
-  } else if (/^Formatter/.test(name)) {
+  } else if (!/^(Enricher|Translator)/.test(name)) {
     rect(o, 4, 1, 8, 1, INK); rect(o, 4, 14, 8, 1, INK); rect(o, 4, 1, 1, 14, INK); rect(o, 11, 1, 1, 14, INK);
     for (const y of [4, 6, 8, 10]) rect(o, 6, y, 4, 1, BLUE);
     o.push([7, 12, INK], [8, 12, INK]);

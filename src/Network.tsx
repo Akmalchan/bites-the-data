@@ -29,6 +29,7 @@ interface NetData {
   base: { customers: number | null; dealTotal: number | null };
   agents: { id: string; steps: StepRow[] }[];
   backend: string;
+  labels?: { rows: string; value: string };
 }
 
 const GLYPH: Record<StepRow["kind"], string> = { delete: "−", modify: "~", add: "+", schema: "▦", none: "" };
@@ -83,6 +84,7 @@ export function NetworkView({ ctx, rogues, onOpenDiff, onBisect }: { ctx: DashCt
 
   // sparkline scales (shared across lanes so drops are comparable)
   const custVals = [data?.base.customers ?? 0, ...(data?.agents ?? []).flatMap((a) => a.steps.map((s) => s.customers ?? 0))].filter((v) => v > 0);
+  const lb = data?.labels ?? { rows: "customers.csv", value: "deal value" };
   const dealVals = [data?.base.dealTotal ?? 0, ...(data?.agents ?? []).flatMap((a) => a.steps.map((s) => s.dealTotal ?? 0))].filter((v) => v > 0);
   const cMin = Math.min(...custVals);
   const cMax = Math.max(...custVals);
@@ -125,7 +127,7 @@ export function NetworkView({ ctx, rogues, onOpenDiff, onBisect }: { ctx: DashCt
             <span><i className="lg lg-und" /> rolled back</span>
             <span><i className="lg lg-fork" /> fork (branch)</span>
             <span className="faint">dot size = rows/cells changed (log)</span>
-            <span className="spark-key"><i className="sk sk-c" /> customers.csv rows <i className="sk sk-d" /> deal value</span>
+            <span className="spark-key"><i className="sk sk-c" /> {lb.rows} rows <i className="sk sk-d" /> {lb.value}</span>
           </div>
           {err && <div className="err" style={{ padding: 12 }}>{err}</div>}
           <div className="net-wrap">
@@ -136,7 +138,7 @@ export function NetworkView({ ctx, rogues, onOpenDiff, onBisect }: { ctx: DashCt
                   <text x={xOf(s)} y={H - 6} textAnchor="middle" className="n-tick">{s === 0 ? "base" : s}</text>
                 </g>
               ))}
-              <text x={gridRight + 36 + sparkW / 2} y={H - 6} textAnchor="middle" className="n-tick">customers.csv rows / deal value</text>
+              <text x={gridRight + 36 + sparkW / 2} y={H - 6} textAnchor="middle" className="n-tick">{lb.rows} rows / {lb.value}</text>
               <circle cx={xOf(0)} cy={baseY} r={7} className="n-base" />
               <text x={xOf(0) + 12} y={baseY + 4} className="n-basel">base</text>
               {lanes.map((lane, i) => {
@@ -274,6 +276,7 @@ export function NetworkView({ ctx, rogues, onOpenDiff, onBisect }: { ctx: DashCt
             sel={sel}
             prev={byAgent.get(sel.agent)?.find((x) => x.step === sel.s.step - 1)}
             base={data?.base}
+            labels={data?.labels}
             ctx={ctx}
             onClose={() => setSel(null)}
             onOpenDiff={onOpenDiff}
@@ -306,8 +309,9 @@ function HoverCard({ h, W, H, backend }: { h: { x: number; y: number; s: StepRow
 }
 
 function DetailPanel({
-  sel, prev, base, ctx, onClose, onOpenDiff, onBisect,
+  sel, prev, base, labels, ctx, onClose, onOpenDiff, onBisect,
 }: {
+  labels?: NetData["labels"];
   sel: { s: StepRow; agent: string };
   prev?: StepRow;
   base?: NetData["base"];
@@ -336,14 +340,14 @@ function DetailPanel({
           <dt>cells changed</dt><dd>{fmt(s.cellsChanged)}</dd>
           {s.customers !== null && (
             <>
-              <dt>customers.csv</dt>
+              <dt>{labels?.rows ?? "customers.csv"}</dt>
               <dd className={before?.customers && s.customers < before.customers ? "bad" : ""}>{before?.customers !== undefined && before?.customers !== null ? `${fmt(before.customers)} → ` : ""}{fmt(s.customers)}</dd>
             </>
           )}
           {s.dealTotal !== null && (
             <>
-              <dt>deal value</dt>
-              <dd className={before?.dealTotal && s.dealTotal < before.dealTotal * 0.99 ? "bad" : ""}>${fmt(s.dealTotal)}</dd>
+              <dt>{labels?.value ?? "deal value"}</dt>
+              <dd className={before?.dealTotal && s.dealTotal < before.dealTotal * 0.99 ? "bad" : ""}>{labels?.rows === "products.csv" ? `${fmt(s.dealTotal)} UZS` : `$${fmt(s.dealTotal)}`}</dd>
             </>
           )}
           <dt>checkpoint</dt><dd className="mono">{s.ref ?? "local clone"} · {ms(s.snapshotMs)}</dd>

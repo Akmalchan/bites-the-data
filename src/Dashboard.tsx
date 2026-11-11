@@ -595,6 +595,11 @@ function SwarmPage({
     const csv = files.filter((f) => f.kind === "csv" && f.status === "modified").sort((a, b) => (b.stats.cellsChanged ?? 0) - (a.stats.cellsChanged ?? 0))[0];
     const merged = Math.max(0, (csv?.stats.rowsRemoved ?? 0) - lost);
     const at = r?.firstBad !== undefined ? ` at step ${r.firstBad}` : "";
+    if (st.scenario === "geargo") {
+      if (r && !r.ok) return `Broke “${r.failed.join("”, “")}”${at}${r.stepName ? ` (${r.stepName})` : ""}.`;
+      const cells = files.filter((f) => f.kind === "csv").reduce((n, f) => n + (f.stats.cellsChanged ?? 0), 0);
+      return cells ? `Changed ${cells.toLocaleString("en-US")} product cells, no rule broken.` : `Wrote ${files.length} files, no rule broken.`;
+    }
     if (lost > 0) return `Deleted ${lost.toLocaleString("en-US")} customers${at}${shifts ? ` and divided ${shifts.toLocaleString("en-US")} deal amounts by 100` : ""}.`;
     if (shifts > 0) return `Divided ${shifts.toLocaleString("en-US")} deal amounts by 100${at}.`;
     if (merged > 0) return `Merged ${merged.toLocaleString("en-US")} duplicates, nothing lost.`;
@@ -612,7 +617,7 @@ function SwarmPage({
         <span className="muted">
           {st.agents.length} agents · <b className="okc">{counts.clean} clean</b> · <b className={counts.bad ? "badc" : "faint"}>{counts.bad} broke rules</b>
         </span>
-        {st.agents.length <= 3 && (
+        {st.agents.length <= 3 && st.scenario !== "geargo" && (
           <span className="faint">
             Pick <b>Swarm × 8</b> in the top bar and run to fan out more agents.
           </span>
@@ -629,6 +634,7 @@ function SwarmPage({
                 aria-expanded={card === a.id}
                 data-testid={`tile-${a.id}`}
               >
+                <AgentAvatar name={a.name} status={r && a.status !== "running" ? (r.ok ? "ok" : "bad") : undefined} size={28} />
                 <span className="tile-id">{a.id}</span>
                 <span className="tile-name">{a.name}</span>
                 <span className="tile-st">{a.status === "running" ? `step ${a.stepsDone + 1}/${a.stepsTotal}` : r ? (r.ok ? "clean" : r.firstBad !== undefined ? `broke at step ${r.firstBad}` : r.failed[0]) : "…"}</span>

@@ -7,7 +7,7 @@ import { Logo, WarnIcon } from "./icons.tsx";
 import { VersionsSidebar } from "./Versions.tsx";
 import { IncidentDrawer } from "./Incident.tsx";
 import { api, fmt } from "./util.ts";
-import { Dashboard, PageHost, PageIntro, Rail, pageFromHash, type ClassicPage } from "./Dashboard.tsx";
+import { Dashboard, PageHost, PageIntro, Rail, pageFromHash, useRogues, type ClassicPage } from "./Dashboard.tsx";
 
 export interface AppState {
   backend: {
@@ -60,7 +60,11 @@ export function App() {
   const [bisectOpen, setBisectOpen] = useState<boolean | string>(false);
   const [bisectLive, setBisectLive] = useState<(BisectResult & { phase?: string }) | null>(null);
   const [mode, setMode] = useState<"scripted" | "llm">("scripted");
-  const [swarm, setSwarm] = useState(0);
+  // GEARGO with its fixed team of 8 is the only mode in the UI. The Demo CRM fallback is reachable by URL only:
+  // /app?scenario=crm (add &swarm=8 for the 8-variant swarm).
+  const urlQ = new URLSearchParams(location.search);
+  const wantScenario: "geargo" | "crm" = urlQ.get("scenario") === "crm" ? "crm" : "geargo";
+  const [swarm, setSwarm] = useState(wantScenario === "crm" && urlQ.get("swarm") === "8" ? 8 : 0);
   const [rewind, setRewind] = useState(false);
   const [incident, setIncident] = useState<string | null>(null);
   const [page, setPage] = useState<ClassicPage>(pageFromHash);
@@ -174,6 +178,13 @@ export function App() {
     };
   }, [from, to, st?.running, st?.worlds.length]);
 
+  const switchedRef = useRef(false);
+  useEffect(() => {
+    if (!st || switchedRef.current || st.running) return;
+    switchedRef.current = true;
+    if ((st.scenario ?? "crm") !== wantScenario && !(wantScenario === "geargo" && st.geargoAvailable === false)) void seed(wantScenario);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [st?.scenario, st?.running]);
   if (!st) return <div className="empty">Loading Bites the Data…</div>;
 
   const worldById = new Map(st.worlds.map((w) => [w.id, w]));
@@ -291,49 +302,6 @@ export function App() {
         >
           <span className="live-dot" /> Live
         </span>
-        <div className="seg" role="radiogroup" aria-label="Scenario">
-          {([
-            ["geargo", "GEARGO catalog"],
-            ["crm", "Demo CRM"],
-          ] as const).map(([sc, label]) => (
-            <button
-              key={sc}
-              role="radio"
-              aria-checked={(st.scenario ?? "crm") === sc}
-              className={`seg-b ${(st.scenario ?? "crm") === sc ? "on" : ""}`}
-              onClick={() => {
-                if ((st.scenario ?? "crm") !== sc) {
-                  setSwarm(0);
-                  seed(sc);
-                }
-              }}
-              disabled={st.running || (sc === "geargo" && st.geargoAvailable === false)}
-              data-testid={`scenario-${sc}`}
-              title={sc === "geargo" ? "GEARGO's real product catalog (products.csv, sellers, translations)" : "Fake customer database (customers.csv, crm.sqlite)"}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="seg" role="radiogroup" aria-label="Agents">
-          {[
-            [0, "3 agents"],
-            [8, "8 agents"],
-          ].map(([n, label]) => (
-            <button
-              key={n}
-              role="radio"
-              aria-checked={swarm === n}
-              className={`seg-b ${swarm === n ? "on" : ""}`}
-              onClick={() => setSwarm(n as number)}
-              disabled={st.running || (n === 8 && st.scenario === "geargo")}
-              data-testid={`swarm-${n}`}
-              title={n ? "Swarm: 8 agent variants, one review" : "Formatter, Merger and Enricher"}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
         <button className="btn" onClick={() => seed()} disabled={st.running} title="Start again from the original data">
           Reset
         </button>
@@ -363,7 +331,7 @@ export function App() {
           ) : (
           <>
           <PageIntro page="dashboard" />
-          <AgentCards agents={st.agents} worlds={st.worlds} keenable={st.keenable?.mode ?? "off"} summaries={summaries} ticker={ticker} active={to} heads={heads} onPick={(h) => compare("base", h)} onRollForward={rollForward} onIncident={setIncident} />
+          <RogueAwareCards st={st} agents={st.agents} worlds={st.worlds} keenable={st.keenable?.mode ?? "off"} summaries={summaries} ticker={ticker} active={to} heads={heads} onPick={(h) => compare("base", h)} onRollForward={rollForward} onIncident={setIncident} />
           {anyCheckpoint && !st.running && <Review key={`${st.worlds.length}|${st.agents.map((a) => `${a.id}:${a.status}:${a.rolledBackTo ?? ""}`).join()}`} onBisect={(agent) => setBisectOpen(agent)} onCompare={compare} onIncident={setIncident} />}
 
           {!st.seeded || !anyCheckpoint ? (
@@ -637,19 +605,28 @@ export function headlineFor(s?: Summary): { text: string; bad: boolean; facts: s
   return { text, bad, facts };
 }
 
+/** AgentCards plus the rule review, so an agent that broke a rule without deleting rows still reads as broken. */
+function RogueAwareCards({ st, ...p }: Parameters<typeof AgentCards>[0] & { st: AppState }) {
+  const rogues = useRogues(st);
+  return <AgentCards {...p} rogues={rogues} />;
+}
+
 export function AgentCards({
   agents, summaries, ticker, active, heads, onPick,
   onRollForward,
   worlds,
   keenable,
   onIncident,
-}: { worlds: WorldMeta[]; keenable: string; agents: AgentState[]; summaries: Summary[]; ticker: Record<string, ToolCall>; active: string; heads: Record<string, string>; onPick: (head: string) => void; onRollForward: (agent: string) => void; onIncident?: (agent: string) => void }) {
+  rogues,
+}: { rogues?: Record<string, { ok: boolean; failed: string[] }>; worlds: WorldMeta[]; keenable: string; agents: AgentState[]; summaries: Summary[]; ticker: Record<string, ToolCall>; active: string; heads: Record<string, string>; onPick: (head: string) => void; onRollForward: (agent: string) => void; onIncident?: (agent: string) => void }) {
   if (!agents.length) return null;
   return (
     <div className="cards">
       {agents.map((a) => {
         const s = summaries.find((x) => x.agent === a.id);
-        const h = headlineFor(s);
+        const h0 = headlineFor(s);
+        const r = rogues?.[a.id];
+        const h = r && !r.ok && !h0.bad ? { text: `Broke “${r.failed[0]}”`, bad: true, facts: [h0.text, ...h0.facts] } : h0;
         const pct = a.stepsTotal ? Math.round((a.stepsDone / a.stepsTotal) * 100) : 0;
         const call = ticker[a.id];
         return (
@@ -669,7 +646,7 @@ export function AgentCards({
               </span>
             </div>
             <div className="role">{a.role}</div>
-            {/Enricher/.test(a.name) && <KeenableBadge calls={worlds.filter((w) => w.agent === a.id).flatMap((w) => w.calls ?? []).filter((c) => c.tool === "web_search")} mode={keenable} />}
+            {/Enricher|Translator/.test(a.name) && <KeenableBadge calls={worlds.filter((w) => w.agent === a.id).flatMap((w) => w.calls ?? []).filter((c) => c.tool === "web_search")} mode={keenable} />}
             {a.rolledBackTo !== undefined && a.rollback && (
               <div className="rb" data-testid={`rolled-${a.id}`}>
                 Rolled back to step {a.rolledBackTo} · {a.rollback.ref ? `Archil branch in ${ms(a.rollback.ms)}` : `APFS clone in ${ms(a.rollback.ms)}`}
