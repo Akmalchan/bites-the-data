@@ -7,6 +7,7 @@ import { DeltaApp } from "./app.ts";
 
 const app = new DeltaApp();
 await app.init();
+void app.warmup(); // first page load should already show a finished run
 const server = express();
 server.use(express.json());
 
@@ -28,7 +29,7 @@ server.post("/api/seed", wrap(async (req) => {
   return app.snapshot();
 }));
 server.post("/api/run", wrap(async (req) => {
-  if (app.running) throw new Error("a run is already in progress");
+  if (app.running || app.refreshing) throw new Error("a run is already in progress");
   const mode = req.body?.mode === "llm" ? "llm" : "scripted";
   app.runAgents(mode, Number(req.body?.swarm ?? 0)).catch((e) => console.error("run failed", e));
   return { started: true, mode };

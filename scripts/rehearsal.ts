@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from "node:fs";
 const args = process.argv.slice(2);
 const url = args.includes("--url") ? args[args.indexOf("--url") + 1] : "http://localhost:5177";
 /** Polls the server from Node (page.waitForFunction does not reliably await an async predicate). */
-async function waitState(ok: (j: { scenario: string; running: boolean }) => boolean, ms = 120_000) {
+async function waitState(ok: (j: { scenario: string; running: boolean; refreshing?: boolean }) => boolean, ms = 120_000) {
   const end = Date.now() + ms;
   await new Promise((r) => setTimeout(r, 600)); // let the page's own URL-driven re-seed start first
   while (Date.now() < end) {
@@ -40,7 +40,7 @@ const shot = (n: string) => page.screenshot({ path: `${out}/${n}.png` });
 
 await page.goto(`${url}/app`);
 await step("reset world (GEARGO catalog)", async () => {
-  await waitState((j) => j.scenario === "geargo" && !j.running);
+  await waitState((j) => j.scenario === "geargo" && !j.running && !j.refreshing);
   await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await page.waitForSelector('[data-testid="run"][disabled]', { timeout: 10_000 }).catch(() => {});
@@ -118,7 +118,7 @@ await step("network shows the fork lane", async () => {
 let swarmMs = 0;
 await step("swarm x 8 (Demo CRM scenario)", async () => {
   await page.goto(`${url}/app?scenario=crm&swarm=8`);
-  await waitState((j) => j.scenario === "crm" && !j.running);
+  await waitState((j) => j.scenario === "crm" && !j.running && !j.refreshing);
   await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
   const t = Date.now();
   await page.getByTestId("run").click();

@@ -19,6 +19,7 @@ export interface AppState {
   geargoAvailable?: boolean;
   seeded: boolean;
   instant?: boolean;
+  refreshing?: boolean;
   seedInfo?: { customers: number; uniquePeople: number; exactDuplicates: number; lookalikes: number; deals: number };
   keenable?: { mode: "key" | "keyless" | "off"; queries: number; cached: number; errors: number };
   diskMode?: { mode: "shared" | "per-agent" | "mixed"; disks: number; ms: number; created: number; opened: number; note: string };
@@ -144,7 +145,8 @@ export function App() {
   // When a run finishes: refresh summaries and point the comparison at the most interesting agent.
   useEffect(() => {
     if (!st) return;
-    if (wasRunning.current && !st.running) {
+    const busy = st.running || !!st.refreshing;
+    if (wasRunning.current && !busy) {
       loadSummaries();
       setTicker({});
       if (heads.B) {
@@ -154,7 +156,7 @@ export function App() {
     }
     if (!to && !st.running && heads.B) setTo(heads.B);
     if (to && !st.worlds.some((w) => w.id === to)) setTo("");
-    wasRunning.current = st.running;
+    wasRunning.current = busy;
   }, [st, heads, to, loadSummaries]);
 
   useEffect(() => {
@@ -200,7 +202,7 @@ export function App() {
   useEffect(() => {
     if (!st || switchedRef.current || st.running) return;
     switchedRef.current = true;
-    if ((st.scenario ?? "crm") !== wantScenario && !(wantScenario === "geargo" && st.geargoAvailable === false)) void seed(wantScenario);
+    if ((st.scenario ?? "crm") !== wantScenario && !(wantScenario === "geargo" && st.geargoAvailable === false)) void seed(wantScenario).then(() => run());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [st?.scenario, st?.running]);
   if (!st) return <div className="empty">Loading Bites the Data…</div>;
@@ -323,13 +325,13 @@ export function App() {
           title={st.backend.error ?? (st.backend.kind === "archil" ? "Running on Archil — each agent has its own disk" : "Running offline (local copies)")}
           data-testid="live"
         >
-          <span className="live-dot" /> Live{st.instant ? "·" : ""}
+          <span className="live-dot" /> Live{st.instant === false ? "·" : ""}
         </span>
-        <button className="btn" onClick={() => seed()} disabled={st.running} title="Start again from the original data">
+        <button className="btn" onClick={() => seed()} disabled={st.running || st.refreshing} title="Start again from the original data">
           Reset
         </button>
-        <button className="btn primary" onClick={run} disabled={st.running} data-testid="run" title="Run the agents; Archil saves a checkpoint after every step">
-          {st.running ? "Running…" : "Run agents"}
+        <button className="btn primary" onClick={run} disabled={st.running || st.refreshing} data-testid="run" title="Re-run the agents; Archil saves a checkpoint after every step and the new results swap in when done">
+          {st.running ? "Running…" : st.refreshing ? "Re-running…" : "Run agents"}
         </button>
       </header>
 
@@ -354,7 +356,7 @@ export function App() {
           ) : (
           <>
           <PageIntro page="dashboard" />
-          <RogueAwareCards st={st} agents={st.agents} worlds={st.worlds} keenable={st.keenable?.mode ?? "off"} summaries={summaries} ticker={ticker} active={to} heads={heads} onPick={(h) => compare("base", h)} onRollForward={rollForward} onIncident={setIncident} />
+          <RogueAwareCards st={st} refreshing={!!st.refreshing} agents={st.agents} worlds={st.worlds} keenable={st.keenable?.mode ?? "off"} summaries={summaries} ticker={ticker} active={to} heads={heads} onPick={(h) => compare("base", h)} onRollForward={rollForward} onIncident={setIncident} />
           {anyCheckpoint && !st.running && <Review key={`${st.worlds.length}|${st.agents.map((a) => `${a.id}:${a.status}:${a.rolledBackTo ?? ""}`).join()}`} onBisect={(agent) => setBisectOpen(agent)} onCompare={compare} onIncident={setIncident} />}
 
           {!st.seeded || !anyCheckpoint ? (
@@ -641,7 +643,8 @@ export function AgentCards({
   keenable,
   onIncident,
   rogues,
-}: { rogues?: Record<string, { ok: boolean; failed: string[] }>; worlds: WorldMeta[]; keenable: string; agents: AgentState[]; summaries: Summary[]; ticker: Record<string, ToolCall>; active: string; heads: Record<string, string>; onPick: (head: string) => void; onRollForward: (agent: string) => void; onIncident?: (agent: string) => void }) {
+  refreshing,
+}: { refreshing?: boolean; rogues?: Record<string, { ok: boolean; failed: string[] }>; worlds: WorldMeta[]; keenable: string; agents: AgentState[]; summaries: Summary[]; ticker: Record<string, ToolCall>; active: string; heads: Record<string, string>; onPick: (head: string) => void; onRollForward: (agent: string) => void; onIncident?: (agent: string) => void }) {
   if (!agents.length) return null;
   return (
     <div className="cards">
@@ -670,6 +673,7 @@ export function AgentCards({
             </div>
             <div className="role">{a.role}</div>
             {a.live && <LiveBadge live={a.live} />}
+            {a.live && refreshing && <span className="mini-spin" title="Mistral is working on a fresh run; results swap in when done" data-testid="live-spin" />}
             {/Enricher|Translator/.test(a.name) && !a.live && <KeenableBadge calls={worlds.filter((w) => w.agent === a.id).flatMap((w) => w.calls ?? []).filter((c) => c.tool === "web_search")} mode={keenable} />}
             {a.rolledBackTo !== undefined && a.rollback && (
               <div className="rb" data-testid={`rolled-${a.id}`}>

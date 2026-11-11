@@ -706,3 +706,5 @@ select.sel.sm { height: 28px; font-size: 12.5px; }
 @keyframes livepulse { 50% { opacity: 0.3; } }
 .tile .live-b { margin-top: 2px; font-size: 10.5px; padding: 1px 6px; align-self: flex-start; }
 .inc-explain { margin-top: 10px; padding: 10px 12px; border-left: 3px solid #FF7000; background: var(--panel-2); border-radius: 6px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.mini-spin { display: inline-block; width: 11px; height: 11px; margin-left: 8px; vertical-align: -1px; border: 2px solid color-mix(in srgb, #FF7000 30%, transparent); border-top-color: #FF7000; border-radius: 50%; animation: minispin 0.8s linear infinite; }
+@keyframes minispin { to { transform: rotate(360deg); } }

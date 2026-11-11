@@ -103,9 +103,11 @@ export class DeltaApp {
   lastBisect?: BisectResult;
   events = new EventEmitter();
   private diffCache = new Map<string, Promise<WorldDiffResult>>();
-  paceMs = Number(process.env.DELTA_PACE_MS ?? 350);
+  paceMs = Number(process.env.DELTA_PACE_MS ?? 0); // no artificial demo delays by default
   /** Hidden presenter switch: show the last finished run instead of waiting (Shift+D or a click on the Live pill). */
-  instant = false;
+  instant = true; // default: runs happen quietly and results swap in when done
+  refreshing = false; // a quiet re-run is in progress; the last finished run stays on screen
+  private target: { worlds: WorldMeta[]; agents: AgentState[]; defs: AgentDef[]; quiet: boolean } = { worlds: [], agents: [], defs: [], quiet: false };
   private readonly normalPaceMs = this.paceMs;
   private gen = 0; // bumped to cancel an in-flight run; its late results are ignored
   private draining?: Promise<unknown>;
@@ -143,10 +145,10 @@ export class DeltaApp {
 
   setInstant(on: boolean) {
     this.instant = on;
-    this.paceMs = on ? 0 : this.normalPaceMs;
+    this.paceMs = this.normalPaceMs;
     if (on) {
       this.liveAbort?.abort();
-      if (this.running) this.restoreCached(); // no cache: the run keeps going, now unpaced and without the live model
+      if (this.running) this.restoreCached(); // no cache: the run keeps going
     }
     this.emit("state", this.snapshot());
     return { instant: this.instant };
@@ -262,6 +264,7 @@ export class DeltaApp {
   snapshot() {
     return {
       instant: this.instant,
+      refreshing: this.refreshing,
       backend: this.backend(),
       llm: { available: llmAvailable(), model: LLM_MODEL },
       runId: this.runId,
@@ -283,7 +286,7 @@ export class DeltaApp {
   }
 
   async seed(scenario?: "geargo" | "crm"): Promise<void> {
-    if (this.running) throw new Error("a run is in progress");
+    if (this.running || this.refreshing) throw new Error("a run is in progress");
     if (scenario) this.scenario = scenario;
     if (this.scenario === "geargo" && !geargoAvailable()) this.scenario = "crm";
     this.running = true;
@@ -319,35 +322,42 @@ export class DeltaApp {
 
   /** Fork the base world once per agent and run all agents concurrently, checkpointing after each step. */
   async runAgents(mode: "scripted" | "llm" = "scripted", swarm = 0): Promise<void> {
-    if (this.running) throw new Error("a run is already in progress");
+    if (this.running || this.refreshing) throw new Error("a run is already in progress");
     if (this.draining) await this.draining; // let a cancelled run's workers stop before reusing their working copies
     if (!this.worlds.some((w) => w.id === "base")) await this.seed();
     if (mode === "llm" && !llmAvailable()) mode = "scripted";
-    const wantSwarm = this.scenario === "geargo" ? 0 : Math.max(0, Math.min(50, Math.floor(swarm)));
-    if (this.instant && this.restoreCached(wantSwarm)) return;
     const myGen = ++this.gen;
-    this.running = true;
-    this.diffCache.clear();
-    this.metricsCache.clear();
-    this.lastBisect = undefined;
-    this.worlds = this.worlds.filter((w) => w.kind === "base");
-    this.swarmSize = Math.max(0, Math.min(50, Math.floor(swarm)));
-    if (this.scenario === "geargo") this.swarmSize = 0; // GEARGO always runs its fixed team of 8
-    this.defs = this.swarmSize ? swarmDefs(this.swarmSize) : this.baseAgents();
-    if (this.swarmSize) mode = "scripted";
-    this.agents = this.defs.map((a) => ({ id: a.id, name: a.name, role: a.role, status: "running", mode, stepsDone: 0, stepsTotal: mode === "llm" ? 8 : activeSteps(a).length }));
+    const swarmSize = this.scenario === "geargo" ? 0 : Math.max(0, Math.min(50, Math.floor(swarm)));
+    const defs = swarmSize ? swarmDefs(swarmSize) : this.baseAgents();
+    if (swarmSize) mode = "scripted";
+    const agents: AgentState[] = defs.map((a) => ({ id: a.id, name: a.name, role: a.role, status: "running", mode, stepsDone: 0, stepsTotal: mode === "llm" ? 8 : activeSteps(a).length }));
+    const worlds = this.worlds.filter((w) => w.kind === "base");
+    // Quiet (default): the last finished run stays on screen and the new one swaps in when done.
+    const quiet = this.instant;
+    this.target = { worlds, agents, defs, quiet };
+    if (quiet) {
+      this.refreshing = true;
+    } else {
+      this.running = true;
+      this.diffCache.clear();
+      this.metricsCache.clear();
+      this.lastBisect = undefined;
+      this.worlds = worlds;
+      this.agents = agents;
+      this.defs = defs;
+      this.swarmSize = swarmSize;
+    }
     const prep = (this.store as unknown as { prepareAgents?: (k: string[]) => Promise<unknown> }).prepareAgents;
     if (prep) {
       try {
-        this.diskMode = await prep.call(this.store, this.defs.map((d) => d.id));
+        this.diskMode = await prep.call(this.store, defs.map((d) => d.id));
       } catch (e) {
         console.warn("per-agent disks unavailable:", (e as Error).message);
       }
     }
     this.emit("state", this.snapshot());
     try {
-      // All agent loops run here, in this one process. Bounded concurrency keeps a 50-agent swarm polite to the backend.
-      const queue = this.defs.map((a) => a.id);
+      const queue = defs.map((a) => a.id);
       const workers = Array.from({ length: Math.min(queue.length, 12) }, async () => {
         for (let id = queue.shift(); id && myGen === this.gen; id = queue.shift()) await this.runOne(id, mode, myGen);
       });
@@ -357,23 +367,46 @@ export class DeltaApp {
     } finally {
       this.draining = undefined;
       if (myGen === this.gen) {
+        if (quiet) {
+          this.worlds = worlds;
+          this.agents = agents;
+          this.defs = defs;
+          this.swarmSize = swarmSize;
+          this.diffCache.clear();
+          this.metricsCache.clear();
+          this.lastBisect = undefined;
+        }
         this.running = false;
+        this.refreshing = false;
         this.cacheRun();
         this.persist();
         this.emit("state", this.snapshot());
-      }
+      } else if (quiet) this.refreshing = false;
+    }
+  }
+
+  /** On server start: make sure the first page load already shows a finished GEARGO run. */
+  async warmup(): Promise<void> {
+    try {
+      if (!geargoAvailable()) return;
+      if (this.scenario === "geargo" && this.agents.length && this.agents.every((a) => a.status === "done") && this.worlds.some((w) => w.kind === "checkpoint")) return;
+      await this.seed("geargo");
+      await this.runAgents("scripted", 0);
+    } catch (e) {
+      console.warn("warmup run failed:", (e as Error).message);
     }
   }
 
   private async runOne(agentId: string, mode: "scripted" | "llm", myGen = this.gen): Promise<void> {
-    const def = this.defs.find((a) => a.id === agentId)!;
-    const st = this.agents.find((a) => a.id === agentId)!;
+    const T = this.target;
+    const def = T.defs.find((a) => a.id === agentId)!;
+    const st = T.agents.find((a) => a.id === agentId)!;
     const work = `_${agentId}`;
     const stale = () => myGen !== this.gen;
     const realEmit = this.emit.bind(this);
     // A cancelled run (instant mode) keeps no state and sends nothing to the UI.
     const emit = (type: string, data: unknown) => {
-      if (!stale()) realEmit(type, data);
+      if (!stale() && !T.quiet) realEmit(type, data);
     };
     try {
       const fork = await this.store.fork("_base", work);
@@ -391,7 +424,7 @@ export class DeltaApp {
           stepName: name, thought, calls, createdAt: Date.now(), snapshotMs: snap.ms, stepMs, ref: snap.ref,
         };
         if (stale()) throw new Error("cancelled");
-        this.worlds.push(meta);
+        T.worlds.push(meta);
         st.stepsDone = step;
         st.currentStep = undefined;
         emit("world", meta);
@@ -407,9 +440,9 @@ export class DeltaApp {
           await checkpoint(s.name, s.thought, ctx.calls, Math.round(performance.now() - t));
         }
       };
-      if (mode === "scripted" && def.live && this.scenario === "geargo" && !this.swarmSize) {
-        if (!mistralAvailable() || this.instant) {
-          st.live = { provider: "Mistral", model: MISTRAL_MODEL, status: "off", reason: this.instant ? "instant mode — ran the scripted version" : "MISTRAL_API_KEY not set — ran the scripted version" };
+      if (mode === "scripted" && def.live && this.scenario === "geargo" && !(T.defs.length > 8 || T.defs.some((d) => d.id.startsWith("S")))) {
+        if (!mistralAvailable()) {
+          st.live = { provider: "Mistral", model: MISTRAL_MODEL, status: "off", reason: "MISTRAL_API_KEY not set — ran the scripted version" };
           emit("agent", st);
           await runScripted();
         } else {
@@ -429,7 +462,7 @@ export class DeltaApp {
             }, this.liveAbort.signal);
             if (!r.steps) throw new Error("the model made no file changes");
             st.live = { provider: "Mistral", model: MISTRAL_MODEL, status: "live", toolCalls: r.toolCalls, ms: Math.round(performance.now() - t0) };
-            const lastW = this.worlds.find((w) => w.id === `${agentId}@${step}`);
+            const lastW = T.worlds.find((w) => w.id === `${agentId}@${step}`);
             if (lastW && r.summary) {
               lastW.thought = `${lastW.thought} — summary: “${r.summary.slice(0, 200)}”`;
               emit("world", lastW);
@@ -439,7 +472,7 @@ export class DeltaApp {
             if (stale()) throw e;
             const reason = String((e as Error).message).slice(0, 160);
             console.warn(`live agent ${agentId} fell back to scripted:`, reason);
-            st.live = this.instant
+            st.live = this.liveAbort?.signal.aborted
               ? { provider: "Mistral", model: MISTRAL_MODEL, status: "off", reason: "instant mode — ran the scripted version" }
               : { provider: "Mistral", model: MISTRAL_MODEL, status: "fallback", reason: `Mistral failed (${reason}) — ran the scripted version`, ms: Math.round(performance.now() - t0) };
             st.name = def.name.replace(/\(Mistral, live\)/, "(scripted fallback)");
@@ -714,6 +747,7 @@ export class DeltaApp {
    * from the fork point so lanes line up.
    */
   async forkAndContinue(worldId: string, variant: string) {
+    if (this.refreshing) throw new Error("Agents are re-running; try again in a few seconds");
     if (this.running) throw new Error("a run is in progress");
     const src = this.worlds.find((x) => x.id === worldId);
     if (!src || src.kind !== "checkpoint" || !src.agent) throw new Error(`${worldId} is not an agent checkpoint`);
@@ -783,6 +817,7 @@ export class DeltaApp {
 
   /** Roll an agent's live world back to one of its checkpoints. History stays (checkpoints are immutable). */
   async rollbackTo(worldId: string) {
+    if (this.refreshing) throw new Error("Agents are re-running; try again in a few seconds");
     if (this.running) throw new Error("a run is in progress");
     const w = this.worlds.find((x) => x.id === worldId);
     if (!w || w.kind !== "checkpoint" || !w.agent) throw new Error(`${worldId} is not an agent checkpoint`);
@@ -797,6 +832,7 @@ export class DeltaApp {
 
   /** Undo a rollback marker: the agent's head is its latest checkpoint again (live world restored to it). */
   async rollForward(agentId: string) {
+    if (this.refreshing) throw new Error("Agents are re-running; try again in a few seconds");
     const st = this.agents.find((a) => a.id === agentId);
     if (!st || st.rolledBackTo === undefined) throw new Error("agent is not rolled back");
     st.rolledBackTo = undefined;
@@ -810,6 +846,7 @@ export class DeltaApp {
 
   /** New world that starts at a checkpoint (Archil: a real branch). */
   async forkFrom(worldId: string) {
+    if (this.refreshing) throw new Error("Agents are re-running; try again in a few seconds");
     if (this.running) throw new Error("a run is in progress");
     const w = this.worlds.find((x) => x.id === worldId);
     if (!w || (w.kind !== "checkpoint" && w.kind !== "base")) throw new Error(`${worldId} is not a checkpoint`);
