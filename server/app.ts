@@ -6,7 +6,7 @@ import { StepContext, type ToolCall } from "./agents/context.ts";
 import { LLM_MODEL, llmAvailable, runLlmAgent } from "./agents/llm.ts";
 import { AGENTS, FORK_VARIANTS, activeSteps, forkVariantDef, swarmDefs, type AgentDef } from "./agents/scripted.ts";
 import { keenableMode, keenableStats } from "./keenable.ts";
-import { GEARGO_AGENTS, GEARGO_FORK_VARIANTS, geargoAvailable, geargoFiles, geargoVariant, setBaseline, REMOVED } from "./geargo.ts";
+import { GEARGO_AGENTS, GEARGO_FORK_VARIANTS, catalogInfo, geargoAvailable, geargoFiles, geargoVariant, setBaseline } from "./geargo.ts";
 import { diffWorlds, type WorldDiffResult } from "./diff/engine.ts";
 import type { FileDetail, Manifest, WorldDiff } from "./diff/types.ts";
 import { evaluateInvariant } from "./invariant.ts";
@@ -129,7 +129,10 @@ export class DeltaApp {
     this.load();
     if (this.scenario === "geargo" && this.worlds.some((w) => w.id === "base")) {
       try {
-        setBaseline(parseCsv((await this.store.reader("base").read("products.csv")).toString()).rows);
+        const rows = parseCsv((await this.store.reader("base").read("products.csv")).toString()).rows;
+        catalogInfo.total = rows.length;
+        catalogInfo.real = rows.filter((r) => !/^GG-1\d{3}/.test(String(r.sku))).length;
+        setBaseline(rows);
       } catch {
         /* base not readable yet */
       }
@@ -189,7 +192,7 @@ export class DeltaApp {
   presets(): Preset[] {
     if (this.scenario === "geargo") {
       return [
-        { id: "removed", label: "No product removed", expr: "rows(products.csv) >= 55" },
+        { id: "removed", label: "No product removed", expr: `rows(products.csv) >= ${catalogInfo.total}` },
         { id: "drift", label: "Prices change within ±20%", expr: "drift(products.csv) <= 0.2" },
         { id: "fitment", label: "Fitment set unless universal fit", expr: "unfit(products.csv) == 0" },
         { id: "stock", label: "Stock not zeroed by a catalog agent", expr: "zeroed(products.csv) == 0" },
@@ -216,6 +219,7 @@ export class DeltaApp {
       running: this.running,
       presets: this.presets(),
       scenario: this.scenario,
+      datasetNote: this.scenario === "geargo" ? `${catalogInfo.real} real GEARGO products + ${catalogInfo.total - catalogInfo.real} generated in the same format` : "Generated demo customer database",
       geargoAvailable: geargoAvailable(),
       swarmSize: this.swarmSize,
       forkVariants: this.forkVariants(),
@@ -543,10 +547,10 @@ export class DeltaApp {
       `- ${sentence}`,
       ...rules.map((r) => `- Rule broken: **${r.label}** (\`${r.expr}\`; now ${r.value}). First bad step: **step ${r.step} — ${r.stepName}** (found by bisect in ${r.checks} checks).${r.thought ? ` The agent's reasoning: "${r.thought}"` : ""}`),
       ``,
-      removed.length ? `## Removed products (full list attached as removed_products.csv)\n| sku | name | price | brand |\n|---|---|---|---|\n${removed.map((r) => `| ${r.join(" | ")} |`).join("\n")}` : ``,
-      prices.length ? `\n## Prices divided by 100\n${prices.map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}\nUZS has no minor unit: prices are whole sum, never tiyin.` : ``,
-      fitment.length ? `\n## Fitment wiped\n${fitment.map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}` : ``,
-      stock.length ? `\n## Stock zeroed\n${stock.map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}` : ``,
+      removed.length ? `## Removed products (${removed.length}; 10 shown, full list attached as removed_products.csv)\n| sku | name | price | brand |\n|---|---|---|---|\n${removed.slice(0, 10).map((r) => `| ${r.join(" | ")} |`).join("\n")}` : ``,
+      prices.length ? `\n## Prices divided by 100 (${prices.length}; first 10)\n${prices.slice(0, 10).map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}\nUZS has no minor unit: prices are whole sum, never tiyin.` : ``,
+      fitment.length ? `\n## Fitment wiped (${fitment.length}; first 10)\n${fitment.slice(0, 10).map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}` : ``,
+      stock.length ? `\n## Stock zeroed (${stock.length}; first 10)\n${stock.slice(0, 10).map((r) => `- ${r[1]} (${r[0]}): ${r[2]}`).join("\n")}` : ``,
       ``,
       `## Restore point`,
       `- Checkpoint: **${restore.world}** (${restore.stepName})${restore.ref ? `, ${backend.kind === "archil" ? "Archil checkpoint" : "checkpoint"} \`${restore.ref}\`` : " (local checkpoint)"}`,
@@ -555,7 +559,7 @@ export class DeltaApp {
       `1. Restore products.csv from checkpoint ${restore.world}${restore.ref ? ` (\`${restore.ref}\`)` : ""}.`,
       `2. Redo the dedupe with exact SKU matching only. Products for the same vehicle with similar names are different products.`,
       `3. Never divide prices: UZS has no minor unit. Keep compatibleVehicleSlugs unless isUniversalFit is true. Do not zero stock from a partial feed.`,
-      `4. Verify: rows(products.csv) >= 55, every price within ±20% of before, fitment set unless universal fit, no stock zeroed.`,
+      `4. Verify: rows(products.csv) >= ${catalogInfo.total}, every price within ±20% of before, fitment set unless universal fit, no stock zeroed.`,
     ]
       .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
       .join("\n");

@@ -2,7 +2,10 @@
 // three catalog agents (one rogue), and catalog rules.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse } from "csv-parse/sync";
+import { stringify } from "csv-stringify/sync";
 import type { Row } from "./diff/types.ts";
+import { rng } from "./seed.ts";
 import type { AgentDef } from "./agents/scripted.ts";
 import { keenableMode, keenableSearch, extractCompanyFacts } from "./keenable.ts";
 
@@ -13,9 +16,94 @@ export function geargoAvailable(): boolean {
   return FILES.every((f) => existsSync(join(GEARGO_DIR, f)));
 }
 
+export const GENERATED = 1945;
+
+const VEHICLES: [string, string, string][] = [
+  ["BYD", "Seagull", "byd-seagull"], ["BYD", "Dolphin", "byd-dolphin"], ["BYD", "Song Plus", "byd-song-plus"], ["BYD", "Han", "byd-han"], ["BYD", "Atto 3", "byd-atto-3"],
+  ["XPeng", "G6", "xpeng-g6"], ["XPeng", "G9", "xpeng-g9"], ["XPeng", "X9", "xpeng-x9"], ["XPeng", "P7", "xpeng-p7"],
+  ["Tesla", "Model 3", "tesla-model-3"], ["Tesla", "Model Y", "tesla-model-y"],
+  ["Li Auto", "L7", "li-auto-l7"], ["Li Auto", "L8", "li-auto-l8"], ["Li Auto", "L9", "li-auto-l9"],
+  ["Zeekr", "001", "zeekr-001"], ["Zeekr", "007", "zeekr-007"],
+  ["Chery", "Tiggo 7 Pro", "chery-tiggo-7-pro"], ["Haval", "Jolion", "haval-jolion"], ["Changan", "UNI-K", "changan-uni-k"], ["Leapmotor", "C11", "leapmotor-c11"],
+];
+const CATS: [string, string, number, number, boolean][] = [
+  // [category, product noun, min price, max price, can be universal]
+  ["Floor Mats", "TPE Floor Mats", 350000, 1600000, false], ["Trunk Mats", "Trunk Liner", 250000, 900000, false],
+  ["Lighting", "LED Headlight Assembly", 1200000, 9500000, false], ["Electronics", "Wireless CarPlay Screen", 900000, 4800000, false],
+  ["Charging", "Portable EV Charger 7 kW", 2500000, 15000000, true], ["Charging", "Type 2 Charging Cable 5 m", 600000, 2400000, true],
+  ["Brakes", "Ceramic Brake Pads (Front)", 280000, 1100000, false], ["Exterior", "Silicone Wiper Blades", 50000, 260000, false],
+  ["Exterior", "All-Weather Car Cover", 300000, 1300000, false], ["Interior", "Center Console Organizer", 90000, 420000, false],
+  ["Lighting", "Ambient Light Kit", 400000, 1800000, false], ["Electronics", "4K Dashcam", 450000, 2600000, true],
+  ["Interior", "Seat Back Tablet Holder", 120000, 520000, true], ["Exterior", "Mud Flaps Set", 110000, 450000, false],
+];
+const BADGES = ["Verified fitment", "Sale", "New", "Tashkent stock", "Fast delivery"];
+
+/** 1,945 extra products in the real products.csv schema, deterministic (fixed seed). */
+function generatedRows(columns: string[], real: Row[]): Row[] {
+  const r = rng(2026);
+  const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)];
+  const taken = new Set(real.map((x) => String(x.slug)));
+  const tax = String(real[0]?.taxCategory ?? "UZ zero VAT placeholder");
+  const out: Row[] = [];
+  let i = 0;
+  while (out.length < GENERATED) {
+    const [make, model, vslug] = pick(VEHICLES);
+    const [cat, noun, lo, hi, canUni] = pick(CATS);
+    const universal = canUni && r() < 0.45;
+    const variant = ["", " Pro", " Plus", " Max", " Lite"][Math.floor(r() * 5)];
+    const name = universal ? `Universal ${noun}${variant}` : `${make} ${model} ${noun}${variant}`;
+    let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    let k = 2;
+    while (taken.has(slug)) slug = `${slug.replace(/-\d+$/, "")}-${k++}`;
+    taken.add(slug);
+    i++;
+    const price = Math.round((lo + r() * (hi - lo)) / 1000) * 1000;
+    const brand = universal ? pick(["GEARGO Select", "AutoPro", "EVLine", "TechCare"]) : `${make} Fit`;
+    const row: Row = {};
+    for (const c of columns) row[c] = "";
+    Object.assign(row, {
+      name,
+      slug,
+      description: `${name}. Generated demo listing in the GEARGO catalog format for Tashkent EV owners.`,
+      facets: `category:${cat}|brand:${brand}${universal ? "" : `|vehicle:${vslug}`}`,
+      sku: `GG-${1000 + i}-${(universal ? "UNIVERSAL" : vslug.replace(/-/g, "").toUpperCase()).slice(0, 9)}`,
+      price: String(price),
+      taxCategory: tax,
+      stockOnHand: String(Math.floor(r() * 121)),
+      trackInventory: "true",
+      "product:brand": brand,
+      "product:shortDescription": `${noun} for ${universal ? "most EVs" : `${make} ${model}`}.`,
+      "product:featureBullets": "Checked fitment|Tashkent warehouse|12-month warranty",
+      "product:compatibleVehicleSlugs": universal ? "" : vslug,
+      "product:isUniversalFit": universal ? "true" : "false",
+      "product:badges": pick(BADGES),
+      "product:warrantyNote": "12-month seller warranty",
+      "product:deliveryNote": "1–2 days in Tashkent",
+      "product:salePrice": r() < 0.2 ? String(Math.round((price * 0.9) / 1000) * 1000) : "",
+      "product:visualTone": pick(["dark", "light", "neutral"]),
+    });
+    out.push(row);
+  }
+  return out;
+}
+
+/** Real rows first (unchanged), then the generated ones. */
+function buildCatalog(realCsv: string): { csv: string; real: number; total: number } {
+  const recs = parse(realCsv, { columns: true, skip_empty_lines: true, bom: true }) as Row[];
+  const columns = Object.keys(recs[0] ?? {});
+  const gen = generatedRows(columns, recs);
+  return { csv: stringify([...recs, ...gen], { header: true, columns }), real: recs.length, total: recs.length + gen.length };
+}
+
+export const catalogInfo = { real: 55, generated: GENERATED, total: 55 + GENERATED };
+
 export function geargoFiles(): Record<string, Buffer> {
   const out: Record<string, Buffer> = {};
   for (const f of FILES) out[f] = readFileSync(join(GEARGO_DIR, f));
+  const cat = buildCatalog(out["products.csv"].toString("utf8"));
+  out["products.csv"] = Buffer.from(cat.csv);
+  catalogInfo.real = cat.real;
+  catalogInfo.total = cat.total;
   out["notes/README.md"] = Buffer.from("# GEARGO catalog\n\nVendure seed data for the GEARGO EV/car-parts marketplace (Tashkent). Prices are whole UZS (no minor unit).\nEvery product needs vehicle fitment unless it is a universal fit.\n");
   return out;
 }
@@ -34,6 +122,32 @@ export const PRICE_DIV: Record<string, number> = {
   "universal-battery-booster-pack": 10190,
 };
 export const STOCK_ZEROED = ["li-auto-l8-rear-seat-tablet-holder", "xpeng-g6-cargo-liner", "byd-song-plus-tpe-floor-mat-set"];
+
+/** Rogue damage at catalog scale: the real PR #106 cases plus generated ones (disjoint sets). */
+export const DAMAGE = { removed: 40, prices: 60, fitment: 25, stock: 45, repriced: 800 };
+export const damageSets = { removed: new Set(REMOVED), prices: new Map(Object.entries(PRICE_DIV)), fitment: new Set([FITMENT_WIPED]), stock: new Set(STOCK_ZEROED) };
+function planDamage(rows: Row[]) {
+  damageSets.removed = new Set(REMOVED);
+  damageSets.prices = new Map(Object.entries(PRICE_DIV));
+  damageSets.fitment = new Set([FITMENT_WIPED]);
+  damageSets.stock = new Set(STOCK_ZEROED);
+  const used = new Set<string>([...REMOVED, ...Object.keys(PRICE_DIV), FITMENT_WIPED, ...STOCK_ZEROED]);
+  const gen = rows.filter((x) => /^GG-1\d{3}/.test(String(x.sku))).sort((a, b) => hash(String(a.slug)) - hash(String(b.slug)));
+  const take = (n: number, ok: (x: Row) => boolean, add: (x: Row) => void) => {
+    for (const x of gen) {
+      if (n <= 0) break;
+      const sl = String(x.slug);
+      if (used.has(sl) || !ok(x)) continue;
+      used.add(sl);
+      add(x);
+      n--;
+    }
+  };
+  take(DAMAGE.removed - REMOVED.length, () => true, (x) => damageSets.removed.add(String(x.slug)));
+  take(DAMAGE.prices - Object.keys(PRICE_DIV).length, (x) => Number(x.price) >= 500000, (x) => damageSets.prices.set(String(x.slug), Math.round((Number(x.price) * 1.04) / 100 / 10) * 10));
+  take(DAMAGE.fitment - 1, (x) => String(x["product:isUniversalFit"]) !== "true" && !!String(x["product:compatibleVehicleSlugs"]), (x) => damageSets.fitment.add(String(x.slug)));
+  take(DAMAGE.stock - STOCK_ZEROED.length, (x) => Number(x.stockOnHand) > 0, (x) => damageSets.stock.add(String(x.slug)));
+}
 
 const repricer: AgentDef = {
   id: "A",
@@ -56,7 +170,7 @@ const repricer: AgentDef = {
         const n = await ctx.compute("reprice.py --fx 12900", () => {
           let n = 0;
           for (const r of t.rows) {
-            if (n >= 40 || hash(String(r.sku)) % 4 === 0) continue;
+            if (n >= DAMAGE.repriced || hash(String(r.sku)) % 5 === 0) continue;
             const pct = 2.2 + (hash(String(r.slug)) % 32) / 10; // 2.2% .. 5.3%
             r.price = String(Math.round((Number(r.price) * (1 + pct / 100)) / 10) * 10);
             n++;
@@ -115,7 +229,7 @@ const cleanerSteps = (fuzzy: boolean): AgentDef["steps"] => [
         thought: "Products for the same vehicle with similar names look like duplicates; keep one of each.",
         run: async (ctx) => {
           const t = await ctx.readCsv(CSV);
-          const kept = await ctx.compute("merge_fuzzy.py --by vehicle,name", () => t.rows.filter((r) => !REMOVED.includes(String(r.slug))), (k) => `${t.rows.length - k.length} near-duplicates merged`);
+          const kept = await ctx.compute("merge_fuzzy.py --by vehicle,name", () => t.rows.filter((r) => !damageSets.removed.has(String(r.slug))), (k) => `${t.rows.length - k.length} near-duplicates merged`);
           await ctx.writeCsv(CSV, t.columns, kept);
         },
       }
@@ -136,8 +250,9 @@ const cleanerSteps = (fuzzy: boolean): AgentDef["steps"] => [
           thought: "Multi-vehicle fitment strings look malformed; clear them so they can be re-imported.",
           run: async (ctx: Parameters<AgentDef["steps"][number]["run"]>[0]) => {
             const t = await ctx.readCsv(CSV);
-            for (const r of t.rows) if (r.slug === FITMENT_WIPED) r["product:compatibleVehicleSlugs"] = "";
-            await ctx.writeCsv(CSV, t.columns, t.rows, "1 fitment cleared");
+            let n = 0;
+            for (const r of t.rows) if (damageSets.fitment.has(String(r.slug))) { r["product:compatibleVehicleSlugs"] = ""; n++; }
+            await ctx.writeCsv(CSV, t.columns, t.rows, `${n} fitments cleared`);
           },
         },
         {
@@ -145,8 +260,9 @@ const cleanerSteps = (fuzzy: boolean): AgentDef["steps"] => [
           thought: "Some prices look like they are stored in tiyin; divide by 100 to get sum.",
           run: async (ctx: Parameters<AgentDef["steps"][number]["run"]>[0]) => {
             const t = await ctx.readCsv(CSV);
-            for (const r of t.rows) if (PRICE_DIV[String(r.slug)]) r.price = String(PRICE_DIV[String(r.slug)]);
-            await ctx.writeCsv(CSV, t.columns, t.rows, "4 prices ÷100");
+            let n = 0;
+            for (const r of t.rows) { const v = damageSets.prices.get(String(r.slug)); if (v !== undefined) { r.price = String(v); n++; } }
+            await ctx.writeCsv(CSV, t.columns, t.rows, `${n} prices ÷100`);
           },
         },
         {
@@ -154,8 +270,9 @@ const cleanerSteps = (fuzzy: boolean): AgentDef["steps"] => [
           thought: "Items missing from today's warehouse feed must be out of stock.",
           run: async (ctx: Parameters<AgentDef["steps"][number]["run"]>[0]) => {
             const t = await ctx.readCsv(CSV);
-            for (const r of t.rows) if (STOCK_ZEROED.includes(String(r.slug))) r.stockOnHand = "0";
-            await ctx.writeCsv(CSV, t.columns, t.rows, "3 items set to 0");
+            let n = 0;
+            for (const r of t.rows) if (damageSets.stock.has(String(r.slug)) && Number(r.stockOnHand) > 0) { r.stockOnHand = "0"; n++; }
+            await ctx.writeCsv(CSV, t.columns, t.rows, `${n} items set to 0`);
           },
         },
       ]
@@ -244,4 +361,5 @@ export const baseline = new Map<string, Row>();
 export function setBaseline(rows: Row[]) {
   baseline.clear();
   for (const r of rows) baseline.set(String(r.sku), r);
+  planDamage(rows);
 }

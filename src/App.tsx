@@ -244,9 +244,11 @@ export function App() {
       const rogueEnd = (st?.worlds ?? []).filter((w) => w.agent === src && w.kind === "checkpoint").sort((x, y) => (y.step ?? 0) - (x.step ?? 0))[0]?.id;
       compare(rogueEnd ?? "base", r.head);
       const d = await api<WorldDiff>(`/api/diff?from=base&to=${encodeURIComponent(r.head)}`);
+      const main = d.files.find((f) => f.kind === "csv" && f.status === "modified");
+      const noun = main ? main.path.replace(/\.csv$/, "").split("/").pop() : st?.scenario === "geargo" ? "products" : "customers";
       const lost = Math.max(0, ...d.files.map((f) => f.stats.rowsLost ?? 0));
       const removed = Math.max(0, ...d.files.filter((f) => f.kind === "csv").map((f) => f.stats.rowsRemoved ?? 0));
-      setTimeout(() => flash(`Fixed: ${r.head} vs base — ${lost} customers lost · ${removed - lost} merged`), 2700);
+      setTimeout(() => flash(`Fixed: ${r.head} vs base — ${lost} ${noun} lost · ${removed - lost} merged`), 2700);
     } catch (e) {
       flash((e as Error).message);
     }

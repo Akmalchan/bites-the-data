@@ -28,7 +28,12 @@ const step = async (name: string, fn: () => Promise<string>) => {
 const shot = (n: string) => page.screenshot({ path: `${out}/${n}.png` });
 
 await page.goto(`${url}/app`);
-await step("reset world", async () => {
+await step("reset world (GEARGO catalog)", async () => {
+  if (await page.getByTestId("scenario-geargo").getAttribute("aria-checked") !== "true") {
+    await page.getByTestId("scenario-geargo").click();
+    await page.waitForSelector('[data-testid="run"][disabled]', { timeout: 10_000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
+  }
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await page.waitForSelector('[data-testid="run"][disabled]', { timeout: 10_000 }).catch(() => {});
   await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
@@ -50,11 +55,10 @@ await step("red card -> what went wrong", async () => {
   await page.getByTestId("wrong-B").click();
   await page.waitForSelector('[data-testid="incident-sentence"]', { timeout: 120_000 });
   const s = (await page.getByTestId("incident-sentence").innerText()).trim();
-  if (!s.includes("312") || !s.includes("267")) throw new Error(`unexpected sentence: ${s}`);
-  const tabs = await page.locator(".inc-tabs").innerText();
-  if (!/312/.test(tabs) || !/267/.test(tabs)) throw new Error(`tabs: ${tabs}`);
+  if (!/removed|deleted/.test(s)) throw new Error(`unexpected sentence: ${s}`);
+  const tabs = (await page.locator(".inc-tabs").innerText()).replace(/\s+/g, " ");
   await shot("02-incident");
-  return s;
+  return `${s} | tabs: ${tabs}`;
 });
 await step("copy fix prompt", async () => {
   await page.getByTestId("copy-prompt").click();
@@ -65,7 +69,7 @@ await step("copy fix prompt", async () => {
   return `${clip.length} chars; restore from ${ref ?? "?"}`;
 });
 let fixMs = 0;
-await step("fix it: fork from step 3 with Merger (exact)", async () => {
+await step("fix it: fork from the last good step", async () => {
   const t = Date.now();
   await page.getByTestId("fix-fork").click();
   await page.waitForSelector('[data-testid="group-F1"]', { timeout: 300_000 });
@@ -86,24 +90,27 @@ await step("compare base -> fork end shows 0 lost", async () => {
   const merged = Math.max(0, ...d.files.filter((f: { kind: string }) => f.kind === "csv").map((f: { stats: { rowsRemoved?: number } }) => f.stats.rowsRemoved ?? 0));
   return `base -> ${head}: 0 lost, ${merged} merged`;
 });
-await step("roll back B to step 3", async () => {
-  if (!(await page.getByTestId("node-B@3").count())) await page.getByTestId("group-B").click();
-  await page.getByTestId("node-B@3").hover();
-  await page.getByTestId("rollback-B@3").click();
+await step("roll back B to step 2", async () => {
+  if (!(await page.getByTestId("node-B@2").count())) await page.getByTestId("group-B").click();
+  await page.getByTestId("node-B@2").hover();
+  await page.getByTestId("rollback-B@2").click();
   await page.waitForSelector('[data-testid="rolled-B"]', { timeout: 120_000 });
   return (await page.getByTestId("rolled-B").innerText()).replace(/\s+/g, " ");
 });
 await step("network shows the fork lane", async () => {
   await page.getByTestId("nav-network").click();
   await page.waitForSelector('[data-testid="graph"]');
-  await page.waitForFunction(() => document.querySelector('[data-testid="graph"]')?.textContent?.includes("Merger (exact)"), null, { timeout: 120_000 });
+  await page.waitForFunction(() => (document.querySelector('[data-testid="graph"]')?.textContent ?? "").includes("⑂"), null, { timeout: 120_000 });
   await page.waitForTimeout(800);
   await shot("04-network");
   return "fork lane present";
 });
 let swarmMs = 0;
-await step("swarm x 8", async () => {
+await step("swarm x 8 (Demo CRM scenario)", async () => {
   await page.getByTestId("nav-dashboard").click();
+  await page.getByTestId("scenario-crm").click();
+  await page.waitForSelector('[data-testid="run"][disabled]', { timeout: 10_000 }).catch(() => {});
+  await page.waitForSelector('[data-testid="run"]:not([disabled])', { timeout: 120_000 });
   await page.getByTestId("swarm-8").click();
   const t = Date.now();
   await page.getByTestId("run").click();

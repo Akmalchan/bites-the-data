@@ -45,10 +45,10 @@ export function VersionsSidebar({ st, from, to, setFrom, compare, rollback, fork
       {st.worlds
         .filter((w) => w.kind === "base")
         .map((w) => (
-          <div key={w.id} className={`v-row v-base ${to === w.id ? "sel" : ""}`} onClick={() => setFrom(w.id)} title="Original data. Click to compare from here.">
+          <div key={w.id} className={`v-row v-base ${to === w.id ? "sel" : ""}`} onClick={() => setFrom(w.id)} title={`${(st as AppState & { datasetNote?: string }).datasetNote ?? "Original data"}. Click to compare from here.`}>
             <span className="v-dot" style={{ background: "var(--text)" }} />
             <span className="v-name">
-              <b>base</b> <span className="muted">original data</span>
+              <b>base</b> <span className="muted">{(st as AppState & { datasetNote?: string }).datasetNote ?? "original data"}</span>
             </span>
             {badge(w.id)}
           </div>
