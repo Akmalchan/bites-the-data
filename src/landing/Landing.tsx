@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { HeroImage, useHeroImage } from "./HeroImage.tsx";
 import { Logo } from "../icons.tsx";
+import { PrSection } from "./PrSection.tsx";
+import { DealsChart, DiffExample, RowsChart } from "./Charts.tsx";
+import { SwarmTable } from "./Swarm.tsx";
 import "./landing.css";
 
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -133,13 +136,11 @@ function CountUp({ to, decimals = 0, prefix = "", suffix = "" }: { to: number; d
   );
 }
 
-const NUMBERS: { to: number; d?: number; pre?: string; suf?: string; label: string; hot?: boolean }[] = [
-  { to: 312, label: "lost customers caught", hot: true },
-  { to: 3, label: "checks to find the bad step" },
-  { to: 0, label: "sandboxes" },
-  { to: 28, pre: "~", label: "exec calls per run" },
-  { to: 0.12, d: 2, suf: " s", label: "rollback via Archil branch" },
-  { to: 25, label: "Keenable web lookups" },
+const NUMBERS: { big: ReactNode; label: string; ctx: string; hot?: boolean }[] = [
+  { big: <><CountUp to={312} /><small> of 5,000</small></>, label: "customers an agent silently deleted", ctx: "caught by name, not as “+4,504 −4,903 lines”", hot: true },
+  { big: <><CountUp to={3} /><small> checks</small></>, label: "to find which of 8 steps broke it", ctx: "bisect over Archil checkpoints" },
+  { big: <CountUp to={0.12} decimals={2} suffix=" s" />, label: "to roll the agent back", ctx: "one Archil branch" },
+  { big: <CountUp to={0.0014} decimals={4} prefix="$" />, label: "per 3-agent run", ctx: "no sandboxes, one exec per step" },
 ];
 
 /* ------------------------------------------------------------------ bisect animation */
@@ -158,20 +159,21 @@ function BisectAnim() {
   const seen = PROBES.slice(0, k);
   return (
     <div className="bis">
+      <div className="bis-lbl mono">steps of agent B (✓ rule held · ✗ rule broke · blank = not checked)</div>
       <div className="bis-row">
         {Array.from({ length: 9 }, (_, s) => {
           const p = seen.find((x) => x.s === s);
           return (
             <div key={s} className={`bis-cell ${p ? (p.ok ? "ok" : "bad") : ""} ${done && s === 4 ? "first" : ""}`}>
-              <span>{s === 0 ? "B" : s}</span>
+              <span>{s === 0 ? "base" : s}</span>
               <i>{p ? (p.ok ? "✓" : "✗") : ""}</i>
             </div>
           );
         })}
       </div>
       <div className="bis-log mono">
-        {k <= 2 ? "endpoints: 8 ✗ · base ✓" : seen.slice(2).map((p) => `${p.s} ${p.ok ? "✓" : "✗"}`).join("  →  ")}
-        {done && <b>  ⇒ step 4</b>}
+        checked: 8 ✗, base ✓, then {seen.slice(2).map((p) => `${p.s} ${p.ok ? "✓" : "✗"}`).join(", ")}
+        {done && <b> ⇒ step 4 broke it</b>}
       </div>
     </div>
   );
@@ -179,10 +181,11 @@ function BisectAnim() {
 
 /* ------------------------------------------------------------------ page */
 
-function Block({ title, children, note }: { title: string; children: ReactNode; note?: string }) {
+function Block({ title, children, note, lead }: { title: string; children: ReactNode; note?: string; lead?: string }) {
   return (
     <div className="blk">
       <h3>{title}</h3>
+      {lead && <p className="blk-lead">{lead}</p>}
       <div className="blk-body">{children}</div>
       {note && <p className="blk-note">{note}</p>}
     </div>
@@ -203,6 +206,7 @@ export function Landing() {
           <Logo size={26} animated />
         </a>
         <nav>
+          <a href="#pr">GitHub</a>
           <a href="#how">How it works</a>
           <a className="bd-navcta" href="/app">
             Open the app →
@@ -225,22 +229,29 @@ export function Landing() {
       <section className="nums" aria-label="Numbers from tonight's runs">
         {NUMBERS.map((n) => (
           <div key={n.label} className={n.hot ? "hot" : ""}>
-            <CountUp to={n.to} decimals={n.d} prefix={n.pre} suffix={n.suf} />
+            <span className="num-row">{n.big}</span>
             <span className="lbl">{n.label}</span>
+            <span className="ctx">{n.ctx}</span>
           </div>
         ))}
       </section>
 
       <section className="sec">
         <div className="kick mono">The problem</div>
-        <h2>Same agent run. Two answers.</h2>
+        <h2>Git can't read your data. We can.</h2>
         <div className="terms">
+          <div className="term-col">
+          <div className="term-lbl">What git tells you</div>
           <div className="term term-git">
             <div className="term-h mono">$ git diff --stat</div>
             <pre className="git-out">
               customers.csv | +4,504 −4,903{"\n"}Binary files a/crm.sqlite and b/crm.sqlite differ
             </pre>
           </div>
+          <p className="term-cap">Line counts and “binary files differ”. Nothing about which customers.</p>
+          </div>
+          <div className="term-col">
+          <div className="term-lbl us">What Bites the Data tells you</div>
           <div className="term term-us">
             <div className="term-h mono">$ bites diff base B@8</div>
             <table className="mini-t">
@@ -256,53 +267,87 @@ export function Landing() {
             </table>
             <div className="term-sum">312 customers deleted · 267 deals ÷100</div>
           </div>
+          <p className="term-cap">Which rows were lost, which were merged, which values changed.</p>
+          </div>
         </div>
+      </section>
+
+      <PrSection />
+
+      <section className="sec" id="watch">
+        <div className="kick mono">Real run, drawn to scale</div>
+        <h2>Watch it happen.</h2>
+        <div className="ch-grid2">
+          <RowsChart />
+          <DealsChart />
+        </div>
+        <DiffExample />
       </section>
 
       <section className="sec" id="how">
         <div className="kick mono">How it works</div>
-        <h2>Checkpoints in, answers out.</h2>
-        <ol className="pipe">
-          {[
-            ["agent step", "one tool call"],
-            ["disk.exec", "zero sandboxes"],
-            ["checkpoint", "archil checkpoints create"],
-            ["manifest", "sha256 per file"],
-            ["typed diff", "rows · cells · paths"],
-            ["invariants", "rules on data"],
-            ["bisect", "⌈log₂ n⌉ checks"],
-            ["roll back", "createBranch"],
-          ].map(([a, b], i) => (
-            <li key={a} className="pipe-n">
-              <span className="pipe-i mono">{String(i + 1).padStart(2, "0")}</span>
-              <b>{a}</b>
-              <span className="mono">{b}</span>
-            </li>
-          ))}
-        </ol>
+        <h2>Save. Compare. Undo.</h2>
+        <div className="steps3">
+          <div className="st3">
+            <div className="st3-n">1</div>
+            <h3>Save every step</h3>
+            <p>Each agent step becomes an Archil checkpoint of the whole disk, in about 0.2 s.</p>
+            <div className="st3-vis" aria-hidden>
+              <div className="cp-row">
+                {["base", "1", "2", "3", "4", "5"].map((x) => (
+                  <span key={x} className="cp"><i />{x}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="st3">
+            <div className="st3-n">2</div>
+            <h3>Compare any two</h3>
+            <p>A typed diff: rows and cells for CSV, tables for SQLite, paths for JSON.</p>
+            <div className="st3-vis mono" aria-hidden>
+              <div className="cmp-line"><b className="tag lost">lost</b> id 63 Carla Roberts</div>
+              <div className="cmp-line"><b className="tag warn">÷100</b> deal 14 <s>187,500</s> → 1,875</div>
+              <div className="cmp-line"><b className="tag merged">path</b> dedupe.strategy exact → fuzzy</div>
+            </div>
+          </div>
+          <div className="st3">
+            <div className="st3-n">3</div>
+            <h3>Find it and undo it</h3>
+            <p>Bisect finds the step that broke a rule. Roll back with one Archil branch.</p>
+            <div className="st3-vis" aria-hidden>
+              <div className="mini-bis">
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((k) => (
+                  <span key={k} className={k <= 3 ? "ok" : "bad"}>{k === 0 ? "b" : k}</span>
+                ))}
+              </div>
+              <div className="mono st3-small">first bad: step 4 · ↺ branch from step 3</div>
+            </div>
+          </div>
+        </div>
+        <h3 className="uth">Under the hood</h3>
 
         <div className="blks">
-          <Block title="Checkpoint manifest" note="Only changed files are read, via S3 GetObject with versionId.">
+          <Block title="Checkpoint manifest" lead="Fingerprint every file at every checkpoint; only files whose fingerprint changed are compared." note="Only changed files are read, via S3 GetObject with versionId.">
             <div className="eq"><V>M</V>(<V>t</V>) = {"{"} <V>p</V> ↦ sha256(<V>file</V><sub>p</sub>) {"}"}</div>
             <div className="eq">Δ(<V>t</V>₁, <V>t</V>₂) = {"{"} <V>p</V> : <V>M</V>(<V>t</V>₁)[<V>p</V>] ≠ <V>M</V>(<V>t</V>₂)[<V>p</V>] {"}"}</div>
           </Block>
-          <Block title="Keyed row diff" note="A removed row is merged if its email survives, otherwise lost.">
+          <Block title="Keyed row diff" lead="Match rows by id, then sort removed rows into merged (email survives) and lost (gone for good)." note="A removed row is merged if its email survives, otherwise lost.">
             <div className="eq">removed = <V>K</V>₁ ∖ <V>K</V>₂ &nbsp;·&nbsp; added = <V>K</V>₂ ∖ <V>K</V>₁</div>
             <div className="eq">changed = {"{"} <V>k</V> ∈ <V>K</V>₁ ∩ <V>K</V>₂ : <V>r</V>₁(<V>k</V>) ≠ <V>r</V>₂(<V>k</V>) {"}"}</div>
             <div className="eq big">399 removed = <span className="g">87 merged</span> + <span className="r">312 lost</span></div>
           </Block>
-          <Block title="Invariants" note="Predicates over a whole world, checked at any checkpoint.">
+          <Block title="Invariants" lead="Plain rules about your data, checked at any saved step." note="Predicates over a whole world, checked at any checkpoint.">
             <div className="eq">rows(customers.csv) ≥ 4,913</div>
             <div className="eq">| Σ deals.amount − Σ₀ | ≤ ε · Σ₀</div>
           </Block>
-          <Block title="Bisect" note="n = 8 steps → ⌈log₂ 8⌉ = 3 checks.">
+          <Block title="Bisect" lead="Check the middle step, keep the half that broke, repeat: 8 steps need only 3 checks." note="n = 8 steps → ⌈log₂ 8⌉ = 3 checks.">
             <BisectAnim />
           </Block>
-          <Block title="Time-travel query" note="Scan checkpoints for a key and report where it disappears. Reads are cached by hash.">
+          <Block title="Time-travel query" lead="Follow one customer across every checkpoint and see exactly when they vanished." note="Scan checkpoints for a key and report where it disappears. Reads are cached by hash.">
             <div className="eq">first = min {"{"} <V>i</V> : <V>k</V> ∉ <V>K</V>(<V>c</V><sub>i</sub>) {"}"}</div>
             <div className="eq small mono">Carla Roberts: c₀ … c₃ ✓ → c₄ ✗</div>
           </Block>
-          <Block title="Cost per run" note="One batched exec per step, no sandbox compute.">
+          <Block title="Cost per run" lead="One small serverless call per step and no sandboxes, so a full run costs a fraction of a cent." note="One batched exec per step, no sandbox compute.">
             <div className="eq">calls ≈ Σ<sub>agents</sub> (steps + 1) + 1 ≈ 28</div>
             <div className="eq">28 × $0.05 / 1,000 ≈ <b>$0.0014</b></div>
           </Block>
@@ -312,17 +357,7 @@ export function Landing() {
       <section className="sec">
         <div className="kick mono">Swarm</div>
         <h2>8 agents, one review.</h2>
-        <div className="tiles8">
-          {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-            <div key={i} className={`t8 ${[2, 5, 7].includes(i) ? "bad" : "ok"}`}>
-              <span className="mono">S{i + 1}</span>
-              <b>{[2, 5, 7].includes(i) ? "rogue" : "clean"}</b>
-            </div>
-          ))}
-        </div>
-        <div className="swarm-sum">
-          <span className="g">5 clean</span> · <span className="r">3 rogue</span>
-        </div>
+        <SwarmTable />
       </section>
 
       <section className="sec built">
@@ -330,6 +365,7 @@ export function Landing() {
         <div className="built-row">
           <div><b>Archil</b><span>disks, checkpoints, branches and serverless exec</span></div>
           <div><b>Keenable</b><span>web search for the Enricher, with source URLs</span></div>
+          <div><b>GitHub</b><span>a data-impact comment on every pull request</span></div>
         </div>
       </section>
 
