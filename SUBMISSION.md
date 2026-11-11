@@ -34,3 +34,4 @@ Archil (disks, exec, checkpoints, branches), Keenable (web search), TypeScript, 
 
 ## Team
 Akmal Shovkatov
+Dias Almat
