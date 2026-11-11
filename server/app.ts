@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { StepContext, type ToolCall } from "./agents/context.ts";
 import { LLM_MODEL, llmAvailable, runLlmAgent } from "./agents/llm.ts";
+import { MISTRAL_MODEL, mistralAnswer, mistralAvailable, runMistralAgent } from "./agents/mistral.ts";
 import { AGENTS, FORK_VARIANTS, activeSteps, forkVariantDef, swarmDefs, type AgentDef } from "./agents/scripted.ts";
 import { keenableMode, keenableStats } from "./keenable.ts";
 import { GEARGO_AGENTS, GEARGO_FORK_VARIANTS, SAFE_FOR, catalogInfo, geargoAvailable, geargoFiles, geargoVariant, setBaseline } from "./geargo.ts";
@@ -57,6 +58,8 @@ export interface AgentState {
   forkOf?: string; // set on agents that continue from another agent's checkpoint
   forkRef?: string; // Archil branch created for the fork
   forkSource?: string; // display name of the agent it forked from
+  /** A live LLM agent (Mistral): "live" = the model did the work; "fallback" = it failed and the scripted version ran; "off" = no key. */
+  live?: { provider: "Mistral"; model: string; status: "running" | "live" | "fallback" | "off"; reason?: string; toolCalls?: number; ms?: number };
 }
 
 export interface Preset {
@@ -101,12 +104,60 @@ export class DeltaApp {
   events = new EventEmitter();
   private diffCache = new Map<string, Promise<WorldDiffResult>>();
   paceMs = Number(process.env.DELTA_PACE_MS ?? 350);
+  /** Hidden presenter switch: show the last finished run instead of waiting (Shift+D or a click on the Live pill). */
+  instant = false;
+  private readonly normalPaceMs = this.paceMs;
+  private gen = 0; // bumped to cancel an in-flight run; its late results are ignored
+  private draining?: Promise<unknown>;
+  private liveAbort?: AbortController;
+  private lastRun: Record<string, { worlds: WorldMeta[]; agents: AgentState[]; defs: AgentDef[]; swarmSize: number }> = {};
+  private runKey = (swarm = this.swarmSize) => `${this.scenario}:${swarm}`;
+
+  private cacheRun() {
+    if (this.agents.some((a) => a.status !== "done") || !this.worlds.some((w) => w.kind === "checkpoint")) return;
+    for (const w of this.worlds) w.frozen = this.store.frozenMeta?.(w.id) ?? w.frozen;
+    this.lastRun[this.runKey()] = structuredClone({ worlds: this.worlds.filter((w) => w.kind !== "fork" && !w.agent?.startsWith("F")), agents: this.agents.filter((a) => !a.forkOf).map((a) => ({ ...a, rolledBackTo: undefined, rollback: undefined })), defs: [], swarmSize: this.swarmSize });
+    this.lastRun[this.runKey()].defs = this.defs;
+  }
+
+  /** Replace whatever is on screen (including an in-flight run) with the last finished run. Returns false if none is cached. */
+  private restoreCached(swarm = this.swarmSize): boolean {
+    const c = this.lastRun[this.runKey(swarm)];
+    if (!c) return false;
+    this.gen++;
+    this.liveAbort?.abort();
+    const snap = structuredClone({ worlds: c.worlds, agents: c.agents });
+    this.worlds = snap.worlds;
+    this.agents = snap.agents;
+    this.defs = c.defs;
+    this.swarmSize = c.swarmSize;
+    for (const w of this.worlds) if (w.frozen) this.store.restore?.(w.id, w.frozen);
+    this.diffCache.clear();
+    this.metricsCache.clear();
+    this.lastBisect = undefined;
+    this.running = false;
+    this.persist();
+    this.emit("state", this.snapshot());
+    return true;
+  }
+
+  setInstant(on: boolean) {
+    this.instant = on;
+    this.paceMs = on ? 0 : this.normalPaceMs;
+    if (on) {
+      this.liveAbort?.abort();
+      if (this.running) this.restoreCached(); // no cache: the run keeps going, now unpaced and without the live model
+    }
+    this.emit("state", this.snapshot());
+    return { instant: this.instant };
+  }
   private defs: AgentDef[] = AGENTS;
   swarmSize = 0;
   diskMode?: unknown;
   scenario: "geargo" | "crm" = "geargo";
   private baseAgents(): AgentDef[] {
-    return this.scenario === "geargo" ? GEARGO_AGENTS : AGENTS;
+    if (this.scenario !== "geargo") return AGENTS;
+    return GEARGO_AGENTS.map((a) => (a.live && mistralAvailable() ? { ...a, name: a.live.name, role: a.live.role } : a));
   }
 
   async init(): Promise<void> {
@@ -127,6 +178,7 @@ export class DeltaApp {
       await this.store.init();
     }
     this.load();
+    if (!this.running) this.cacheRun();
     if (this.scenario === "geargo" && this.worlds.some((w) => w.id === "base")) {
       try {
         const rows = parseCsv((await this.store.reader("base").read("products.csv")).toString()).rows;
@@ -209,6 +261,7 @@ export class DeltaApp {
 
   snapshot() {
     return {
+      instant: this.instant,
       backend: this.backend(),
       llm: { available: llmAvailable(), model: LLM_MODEL },
       runId: this.runId,
@@ -267,8 +320,12 @@ export class DeltaApp {
   /** Fork the base world once per agent and run all agents concurrently, checkpointing after each step. */
   async runAgents(mode: "scripted" | "llm" = "scripted", swarm = 0): Promise<void> {
     if (this.running) throw new Error("a run is already in progress");
+    if (this.draining) await this.draining; // let a cancelled run's workers stop before reusing their working copies
     if (!this.worlds.some((w) => w.id === "base")) await this.seed();
     if (mode === "llm" && !llmAvailable()) mode = "scripted";
+    const wantSwarm = this.scenario === "geargo" ? 0 : Math.max(0, Math.min(50, Math.floor(swarm)));
+    if (this.instant && this.restoreCached(wantSwarm)) return;
+    const myGen = ++this.gen;
     this.running = true;
     this.diffCache.clear();
     this.metricsCache.clear();
@@ -292,27 +349,40 @@ export class DeltaApp {
       // All agent loops run here, in this one process. Bounded concurrency keeps a 50-agent swarm polite to the backend.
       const queue = this.defs.map((a) => a.id);
       const workers = Array.from({ length: Math.min(queue.length, 12) }, async () => {
-        for (let id = queue.shift(); id; id = queue.shift()) await this.runOne(id, mode);
+        for (let id = queue.shift(); id && myGen === this.gen; id = queue.shift()) await this.runOne(id, mode, myGen);
       });
-      await Promise.all(workers);
+      const all = Promise.all(workers);
+      this.draining = all.catch(() => {});
+      await all;
     } finally {
-      this.running = false;
-      this.persist();
-      this.emit("state", this.snapshot());
+      this.draining = undefined;
+      if (myGen === this.gen) {
+        this.running = false;
+        this.cacheRun();
+        this.persist();
+        this.emit("state", this.snapshot());
+      }
     }
   }
 
-  private async runOne(agentId: string, mode: "scripted" | "llm"): Promise<void> {
+  private async runOne(agentId: string, mode: "scripted" | "llm", myGen = this.gen): Promise<void> {
     const def = this.defs.find((a) => a.id === agentId)!;
     const st = this.agents.find((a) => a.id === agentId)!;
     const work = `_${agentId}`;
+    const stale = () => myGen !== this.gen;
+    const realEmit = this.emit.bind(this);
+    // A cancelled run (instant mode) keeps no state and sends nothing to the UI.
+    const emit = (type: string, data: unknown) => {
+      if (!stale()) realEmit(type, data);
+    };
     try {
       const fork = await this.store.fork("_base", work);
       st.forkMs = fork.ms;
-      this.emit("agent", st);
+      emit("agent", st);
       let step = 0;
       const checkpoint = async (name: string, thought: string, calls: ToolCall[], stepMs: number) => {
         step++;
+        if (stale()) throw new Error("cancelled");
         const id = `${agentId}@${step}`;
         const snap = await this.store.snapshot(work, id);
         const prev = step === 1 ? "base" : `${agentId}@${step - 1}`;
@@ -320,36 +390,82 @@ export class DeltaApp {
           id, label: `${def.name} · step ${step}`, parent: prev, kind: "checkpoint", agent: agentId, step,
           stepName: name, thought, calls, createdAt: Date.now(), snapshotMs: snap.ms, stepMs, ref: snap.ref,
         };
+        if (stale()) throw new Error("cancelled");
         this.worlds.push(meta);
         st.stepsDone = step;
         st.currentStep = undefined;
-        this.emit("world", meta);
-        this.emit("agent", st);
+        emit("world", meta);
+        emit("agent", st);
       };
-      if (mode === "scripted") {
+      const runScripted = async () => {
         for (const s of activeSteps(def)) {
           st.currentStep = s.name;
-          this.emit("agent", st);
-          const ctx = new StepContext(this.store, work, this.paceMs, (c) => this.emit("call", { agent: agentId, call: c }));
+          emit("agent", st);
+          const ctx = new StepContext(this.store, work, this.paceMs, (c) => emit("call", { agent: agentId, call: c }));
           const t = performance.now();
           await s.run(ctx);
           await checkpoint(s.name, s.thought, ctx.calls, Math.round(performance.now() - t));
         }
+      };
+      if (mode === "scripted" && def.live && this.scenario === "geargo" && !this.swarmSize) {
+        if (!mistralAvailable() || this.instant) {
+          st.live = { provider: "Mistral", model: MISTRAL_MODEL, status: "off", reason: this.instant ? "instant mode — ran the scripted version" : "MISTRAL_API_KEY not set — ran the scripted version" };
+          emit("agent", st);
+          await runScripted();
+        } else {
+          const t0 = performance.now();
+          st.live = { provider: "Mistral", model: MISTRAL_MODEL, status: "running" };
+          st.stepsTotal = 3;
+          emit("agent", st);
+          let t = performance.now();
+          try {
+            this.liveAbort = new AbortController();
+            const r = await runMistralAgent(def.live, this.store, work, async (s) => {
+              await checkpoint(s.name, s.thought, s.calls, Math.round(performance.now() - t));
+              t = performance.now();
+            }, (c) => {
+              st.currentStep = `${c.tool} ${c.input}`.slice(0, 80);
+              emit("call", { agent: agentId, call: c });
+            }, this.liveAbort.signal);
+            if (!r.steps) throw new Error("the model made no file changes");
+            st.live = { provider: "Mistral", model: MISTRAL_MODEL, status: "live", toolCalls: r.toolCalls, ms: Math.round(performance.now() - t0) };
+            const lastW = this.worlds.find((w) => w.id === `${agentId}@${step}`);
+            if (lastW && r.summary) {
+              lastW.thought = `${lastW.thought} — summary: “${r.summary.slice(0, 200)}”`;
+              emit("world", lastW);
+            }
+            st.stepsTotal = step;
+          } catch (e) {
+            if (stale()) throw e;
+            const reason = String((e as Error).message).slice(0, 160);
+            console.warn(`live agent ${agentId} fell back to scripted:`, reason);
+            st.live = this.instant
+              ? { provider: "Mistral", model: MISTRAL_MODEL, status: "off", reason: "instant mode — ran the scripted version" }
+              : { provider: "Mistral", model: MISTRAL_MODEL, status: "fallback", reason: `Mistral failed (${reason}) — ran the scripted version`, ms: Math.round(performance.now() - t0) };
+            st.name = def.name.replace(/\(Mistral, live\)/, "(scripted fallback)");
+            st.stepsTotal = step + activeSteps(def).length;
+            emit("agent", st);
+            await runScripted();
+          }
+        }
+      } else if (mode === "scripted") {
+        await runScripted();
       } else {
         let t = performance.now();
         await runLlmAgent(def, this.store, work, async (s) => {
           await checkpoint(s.name, s.thought, s.calls, Math.round(performance.now() - t));
           t = performance.now();
-        }, (c) => this.emit("call", { agent: agentId, call: c }));
+        }, (c) => emit("call", { agent: agentId, call: c }));
         st.stepsTotal = step;
       }
       st.status = "done";
     } catch (e) {
+      if (stale()) return;
       st.status = "error";
       st.error = String((e as Error).message).slice(0, 300);
       console.error(`agent ${agentId} failed:`, e);
     } finally {
-      this.emit("agent", st);
+      emit("agent", st);
     }
   }
 
@@ -407,6 +523,17 @@ export class DeltaApp {
   }
 
   /** Everything the "What went wrong" panel needs for one broken agent, plus a ready-to-paste fix prompt. */
+  /** "Explain with Mistral": one plain-language answer about an incident. */
+  async explain(agentId: string): Promise<{ text: string; model: string }> {
+    if (!mistralAvailable()) throw new Error("MISTRAL_API_KEY not set");
+    const inc = (await this.incident(agentId)) as { prompt: string };
+    const text = await mistralAnswer(
+      "You explain data incidents to a busy online-store owner. Answer in at most 4 short sentences, plain words, no markdown headings: what went wrong, why it matters for customers, and the safest fix.",
+      inc.prompt,
+    );
+    return { text, model: MISTRAL_MODEL };
+  }
+
   async incident(agentId: string) {
     if (this.running) throw new Error("a run is in progress");
     if (this.scenario === "geargo") return this.incidentGeargo(agentId);

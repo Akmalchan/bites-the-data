@@ -18,6 +18,7 @@ export interface AppState {
   scenario?: "geargo" | "crm";
   geargoAvailable?: boolean;
   seeded: boolean;
+  instant?: boolean;
   seedInfo?: { customers: number; uniquePeople: number; exactDuplicates: number; lookalikes: number; deals: number };
   keenable?: { mode: "key" | "keyless" | "off"; queries: number; cached: number; errors: number };
   diskMode?: { mode: "shared" | "per-agent" | "mixed"; disks: number; ms: number; created: number; opened: number; note: string };
@@ -178,6 +179,23 @@ export function App() {
     };
   }, [from, to, st?.running, st?.worlds.length]);
 
+  // Hidden presenter switch ("instant mode"): Shift+D or a click on the Live pill. The only visible sign is "Live·".
+  const toggleInstant = useCallback(() => {
+    void api<{ instant: boolean }>("/api/instant", { method: "POST", body: JSON.stringify({ on: !stRef.current?.instant }) })
+      .then((r) => setSt((s) => (s ? { ...s, instant: r.instant } : s)))
+      .catch(() => {});
+  }, []);
+  const stRef = useRef(st);
+  stRef.current = st;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "d") toggleInstant();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [toggleInstant]);
   const switchedRef = useRef(false);
   useEffect(() => {
     if (!st || switchedRef.current || st.running) return;
@@ -206,6 +224,10 @@ export function App() {
     try {
       setSummaries([]);
       await api("/api/run", { method: "POST", body: JSON.stringify({ mode, swarm }) });
+      // Instant mode can answer a run with the cached results without ever going "running".
+      setTimeout(() => {
+        if (!stRef.current?.running) void loadSummaries();
+      }, 400);
     } catch (e) {
       flash((e as Error).message);
     }
@@ -296,11 +318,12 @@ export function App() {
         </a>
         <div className="spacer" />
         <span
+          onClick={toggleInstant}
           className="live"
           title={st.backend.error ?? (st.backend.kind === "archil" ? "Running on Archil — each agent has its own disk" : "Running offline (local copies)")}
           data-testid="live"
         >
-          <span className="live-dot" /> Live
+          <span className="live-dot" /> Live{st.instant ? "·" : ""}
         </span>
         <button className="btn" onClick={() => seed()} disabled={st.running} title="Start again from the original data">
           Reset
@@ -646,7 +669,8 @@ export function AgentCards({
               </span>
             </div>
             <div className="role">{a.role}</div>
-            {/Enricher|Translator/.test(a.name) && <KeenableBadge calls={worlds.filter((w) => w.agent === a.id).flatMap((w) => w.calls ?? []).filter((c) => c.tool === "web_search")} mode={keenable} />}
+            {a.live && <LiveBadge live={a.live} />}
+            {/Enricher|Translator/.test(a.name) && !a.live && <KeenableBadge calls={worlds.filter((w) => w.agent === a.id).flatMap((w) => w.calls ?? []).filter((c) => c.tool === "web_search")} mode={keenable} />}
             {a.rolledBackTo !== undefined && a.rollback && (
               <div className="rb" data-testid={`rolled-${a.id}`}>
                 Rolled back to step {a.rolledBackTo} · {a.rollback.ref ? `Archil branch in ${ms(a.rollback.ms)}` : `APFS clone in ${ms(a.rollback.ms)}`}
@@ -804,6 +828,21 @@ export function Review({ onBisect, onCompare, onIncident }: { onBisect: (agent: 
         </div>
       )}
     </div>
+  );
+}
+
+/** Honest status of a live LLM agent: live (the model did the work), fallback (it failed; the scripted version ran) or off (no key). */
+export function LiveBadge({ live, compact }: { live: NonNullable<AgentState["live"]>; compact?: boolean }) {
+  const text =
+    live.status === "running" ? "LIVE · Mistral — thinking…"
+    : live.status === "live" ? "LIVE · Mistral"
+    : live.status === "fallback" ? "Mistral failed · scripted fallback"
+    : "Mistral off · scripted";
+  const meta = live.status === "live" && !compact ? `${live.model} · ${live.toolCalls ?? 0} tool calls · ${((live.ms ?? 0) / 1000).toFixed(1)} s` : "";
+  return (
+    <span className={`live-b ${live.status}`} title={live.reason ?? `${live.provider} ${live.model}: real model tool calls; every file change is a checkpoint`} data-testid="live-badge">
+      <i className="ld" /> {text} {meta && <span className="lm">{meta}</span>}
+    </span>
   );
 }
 

@@ -201,7 +201,7 @@ export function NetworkView({ ctx, rogues, onOpenDiff, onBisect }: { ctx: DashCt
                     <circle cx={14} cy={y} r={4.5} fill={color} />
                     <text x={26} y={y + 4} className={`n-name ${compact ? "sm" : ""}`}>
                       {(() => {
-                        const label = a.forkOf ? `⑂ ${a.name} @${a.forkOf.split("@")[1]}` : `${a.id} · ${a.name}`;
+                        const label = a.forkOf ? `⑂ ${a.name} @${a.forkOf.split("@")[1]}` : a.live?.status === "live" || a.live?.status === "running" ? `${a.id} · LIVE · Mistral` : `${a.id} · ${a.name}`;
                         const max = compact ? 16 : 19;
                         return label.length > max ? label.slice(0, max - 1) + "…" : label;
                       })()}

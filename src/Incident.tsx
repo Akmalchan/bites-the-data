@@ -35,6 +35,16 @@ export function IncidentDrawer({
   const [tab, setTab] = useState<string>("missing");
   const [q, setQ] = useState("");
   const [showPrompt, setShowPrompt] = useState(false);
+  const [explain, setExplain] = useState<{ busy?: boolean; text?: string; err?: string }>({});
+  const askMistral = async () => {
+    setExplain({ busy: true });
+    try {
+      const r = await api<{ text: string; model: string }>("/api/explain", { method: "POST", body: JSON.stringify({ agent }) });
+      setExplain({ text: `${r.text}\n— ${r.model}` });
+    } catch (e) {
+      setExplain({ err: String((e as Error).message) });
+    }
+  };
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -109,6 +119,9 @@ export function IncidentDrawer({
               <button className="btn primary inc-copy" onClick={copy} data-testid="copy-prompt" title="Copy a ready-made prompt for Claude/Cursor to fix this">
                 Copy fix prompt for your AI agent
               </button>
+              <button className="btn" onClick={askMistral} disabled={explain.busy} data-testid="explain-mistral" title="Ask Mistral to explain this incident in plain words">
+                {explain.busy ? "Asking Mistral…" : "Explain with Mistral"}
+              </button>
               <button className="btn" onClick={download} data-testid="download-missing">
                 Download {inc.tabs[0]?.label.toLowerCase() ?? "missing rows"} (CSV)
               </button>
@@ -123,6 +136,7 @@ export function IncidentDrawer({
                 </>
               )}
             </div>
+            {(explain.text || explain.err) && <div className="inc-explain" data-testid="explain-text">{explain.text ?? `Mistral unavailable: ${explain.err}`}</div>}
             {showPrompt && <textarea ref={promptRef} className="inc-prompt" readOnly value={inc.prompt} aria-label="Fix prompt" />}
 
             <div className="inc-tabs" role="tablist">

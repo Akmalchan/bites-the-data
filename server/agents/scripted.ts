@@ -19,6 +19,8 @@ export interface AgentDef {
   role: string;
   goal: string;
   steps: StepDef[];
+  /** Runs as a live LLM agent when its provider key is set; `steps` are the scripted fallback. */
+  live?: { provider: "mistral"; name: string; role: string; goal: string; prompt: string };
 }
 
 const CSV = "customers.csv";

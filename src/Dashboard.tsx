@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { AgentState, BisectResult, FileChange, ToolCall, WorldDiff, WorldMeta } from "./types.ts";
 import {
-  AGENT_COLOR, AgentCards, FileRow, Review, StatsStrip, StepTrace, Totals, WorldSelect, ms,
+  AGENT_COLOR, AgentCards, FileRow, LiveBadge, Review, StatsStrip, StepTrace, Totals, WorldSelect, ms,
   type AppState, type Summary,
 } from "./App.tsx";
 import { FileDetailView } from "./FileDetail.tsx";
@@ -638,6 +638,7 @@ function SwarmPage({
                 <AgentAvatar name={a.name} status={r && a.status !== "running" ? (r.ok ? "ok" : "bad") : undefined} size={28} />
                 <span className="tile-id">{a.id}</span>
                 <span className="tile-name">{a.name}</span>
+                {a.live && <LiveBadge live={a.live} compact />}
                 <span className="tile-st">{a.status === "running" ? `step ${a.stepsDone + 1}/${a.stepsTotal}` : r ? (r.ok ? "clean" : r.firstBad !== undefined ? `broke at step ${r.firstBad}` : r.failed[0]) : "…"}</span>
               </button>
               {card === a.id && (

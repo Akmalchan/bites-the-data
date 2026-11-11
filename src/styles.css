@@ -695,3 +695,14 @@ select.sel.sm { height: 28px; font-size: 12.5px; }
 .agent-card-t b { font-size: 14.5px; }
 .agent-card p { margin: 0; font-size: 13.5px; color: var(--text); line-height: 1.4; }
 .agent-card .btn { align-self: flex-start; margin-top: 4px; }
+
+/* Live LLM agent (Mistral) */
+.live-b { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; border-radius: 5px; padding: 2px 7px; color: #FF7000; background: color-mix(in srgb, #FF7000 13%, transparent); }
+.live-b .ld { width: 7px; height: 7px; border-radius: 50%; background: #FF7000; }
+.live-b.running .ld { animation: livepulse 1s ease-in-out infinite; }
+.live-b.fallback, .live-b.off { color: var(--muted); background: var(--panel-2); font-weight: 600; }
+.live-b.fallback .ld, .live-b.off .ld { background: var(--faint); }
+.live-b .lm { font-weight: 500; opacity: 0.85; }
+@keyframes livepulse { 50% { opacity: 0.3; } }
+.tile .live-b { margin-top: 2px; font-size: 10.5px; padding: 1px 6px; align-self: flex-start; }
+.inc-explain { margin-top: 10px; padding: 10px 12px; border-left: 3px solid #FF7000; background: var(--panel-2); border-radius: 6px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }

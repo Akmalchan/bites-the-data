@@ -392,6 +392,18 @@ const translator: AgentDef = {
   id: "G3",
   name: "Translator (web)",
   role: "Add ru/uz names and brand sites",
+  live: {
+    provider: "mistral",
+    name: "Translator (Mistral, live)",
+    role: "Live LLM: ru/uz names for 20 products",
+    goal: "Add Russian and Uzbek product names for the first 20 products in products.csv to translations/products.json.",
+    prompt:
+      "Task: for the first 20 data rows of products.csv, add Russian (ru) and Uzbek Latin (uz) product names to translations/products.json. " +
+      "That file maps product slug -> { ru: { name, description }, uz: { name, description } }; keep that structure and every existing entry. " +
+      "Add only `name` for each language (no description). Keep brand and model names (BYD, Tesla, Model Y, Li Auto L8, XPeng G6...) in Latin script. " +
+      "Read products.csv with run_bash, e.g. `head -21 products.csv | cut -d, -f1,2` (columns: name, slug). " +
+      "Then call merge_json on translations/products.json with entries keyed by slug, in one or two batches. Do not edit products.csv.",
+  },
   goal: "Add Russian and Uzbek product names to translations/products.json and record official brand sites.",
   steps: [
     {
